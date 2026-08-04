@@ -9,18 +9,6 @@ ProteusOS é um sistema operacional minimalista que implementa conceitos de:
 - Gerenciamento Transacional: Atualizações aplicadas de forma atômica
 - Arquitetura Modular: Componentes independentes e substituíveis
 
-## Estrutura do Projeto
-
-proteus_os/
-├── src/
-│ ├── builder.py # Gerenciador de snapshots
-│ ├── pkg_manager.py # Gerenciador de pacotes
-│ ├── updater.py # Gerenciador de atualizações
-│ └── cli.py # Interface de linha de comando
-├── proteus_data/ # Dados do sistema (snapshots, etc.)
-├── proteus # Script executável principal
-└── README.md
-
 ## Requisitos
 
 - Python 3.10+
@@ -62,30 +50,6 @@ Listar pacotes instalados:
 
 Desinstalar um pacote:
 ./proteus package uninstall package_id
-
-## Exemplos
-
-Criar um pacote de atualização:
-Estrutura do pacote:
-update_example/
-├── manifest.json
-├── pre_update.sh
-├── post_update.sh
-└── files/
-    └── hello.txt
-
-Aplicar a atualização:
-./proteus update ./update_example
-
-Criar um pacote de software:
-Estrutura do pacote:
-package_example/
-├── manifest.json
-└── files/
-    └── myapp.sh
-
-Instalar o pacote:
-./proteus package install ./package_example
 
 ## Arquitetura
 
