@@ -1,0 +1,17 @@
+{
+  "name": "exemplo_hello_world",
+  "version": "1.0.0",
+  "description": "Exemplo de pacote de atualização",
+  "files": [
+    {
+      "source": "hello.txt",
+      "destination": "/tmp/hello.txt",
+      "mode": 644
+    },
+    {
+      "source": "greet.sh",
+      "destination": "/usr/local/bin/greet",
+      "mode": 755
+    }
+  ]
+}

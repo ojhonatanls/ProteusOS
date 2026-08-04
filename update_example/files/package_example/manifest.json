@@ -1,0 +1,12 @@
+{
+  "name": "exemplo_pacote",
+  "version": "1.0.0",
+  "description": "Exemplo de pacote",
+  "files": [
+    {
+      "source": "myapp.sh",
+      "destination": "/usr/local/bin/myapp",
+      "mode": 755
+    }
+  ]
+}
