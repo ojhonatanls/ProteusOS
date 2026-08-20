@@ -1,6 +1,6 @@
 # ProteusOS - Sistema Operacional Minimalista e Modular
 
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/ojhonatanls/ProteusOS/releases/tag/v1.0.0)
+[![Version](https://img.shields.io/badge/version-2.0.1-blue.svg)](https://github.com/ojhonatanls/ProteusOS/releases/tag/v1.0.0)
 [![Python](https://img.shields.io/badge/python-3.10+-green.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-orange.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://img.shields.io/badge/tests-4%20passing-brightgreen.svg)](https://github.com/ojhonatanls/ProteusOS/actions)
