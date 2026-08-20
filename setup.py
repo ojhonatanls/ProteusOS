@@ -1,7 +1,5 @@
 from setuptools import setup, Extension
-import os
 
-# Caminho correto para o arquivo snapshot.c
 snapshot_module = Extension(
     'snapshot',
     sources=['src/c_bridge/snapshot.c'],

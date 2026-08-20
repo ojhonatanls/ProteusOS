@@ -18,6 +18,15 @@ from pkg_manager import PackageManager
 from updater import SystemUpdater
 from config import Config
 
+# Tenta importar o módulo C (se disponível)
+try:
+    import snapshot
+    C_AVAILABLE = True
+    print("✅ Módulo C carregado com sucesso!")
+except ImportError as e:
+    C_AVAILABLE = False
+    # Não imprime nada para não poluir a saída
+
 class ProteusCLI:
     def __init__(self):
         self.config = Config()
@@ -38,6 +47,7 @@ class ProteusCLI:
         # Comando: build
         parser_build = subparsers.add_parser("build", help="Construir um sistema base")
         parser_build.add_argument("--base-image", required=True, choices=["alpine", "debian"], help="Imagem base")
+        parser_build.add_argument("--use-c", action="store_true", help="Usar implementação em C (experimental)")
 
         # Comando: status
         parser_status = subparsers.add_parser("status", help="Status do sistema e snapshots")
@@ -71,7 +81,7 @@ class ProteusCLI:
         # Comando: export
         parser_export = subparsers.add_parser("export", help="Exportar um snapshot para um arquivo .tar.gz")
         parser_export.add_argument("snapshot_id", help="ID do snapshot a ser exportado")
-        parser_export.add_argument("--output", "-o", help="Caminho do arquivo de saída (padrão: ~/proteus_exports/<snapshot_id>.tar.gz)")
+        parser_export.add_argument("--output", "-o", help="Caminho do arquivo de saída")
 
         # Comando: import
         parser_import = subparsers.add_parser("import", help="Importar um snapshot de um arquivo .tar.gz")
@@ -79,7 +89,7 @@ class ProteusCLI:
 
         # Comando: cleanup
         parser_cleanup = subparsers.add_parser("cleanup", help="Remover snapshots antigos")
-        parser_cleanup.add_argument("--keep", type=int, default=5, help="Número de snapshots recentes a manter (padrão: 5)")
+        parser_cleanup.add_argument("--keep", type=int, default=5, help="Número de snapshots recentes a manter")
         parser_cleanup.add_argument("--snapshot-id", help="Remover um snapshot específico")
 
         parsed_args = parser.parse_args(args)
@@ -111,6 +121,18 @@ class ProteusCLI:
 
     def _cmd_build(self, args):
         print(f"🛠️  Construindo sistema base: {args.base_image}...")
+        
+        # Usa C se disponível e solicitado
+        if C_AVAILABLE and args.use_c:
+            try:
+                snapshot_id = snapshot.build(args.base_image)
+                print(f"✅ Sistema construído com sucesso (C)! Snapshot: {snapshot_id}")
+                return
+            except Exception as e:
+                print(f"⚠️  Erro no módulo C: {e}")
+                print("   Usando implementação Python...")
+        
+        # Fallback para Python
         snapshot_id = self.builder.build_base(args.base_image)
         print(f"✅ Sistema construído com sucesso! Snapshot: {snapshot_id}")
 
@@ -206,7 +228,7 @@ class ProteusCLI:
         snapshot_path = self.builder.snapshots_dir / f"{snapshot_id}.tar.gz"
 
         if not snapshot_path.exists():
-            print(f"❌ Snapshot '{snapshot_id}' não encontrado em {snapshot_path}")
+            print(f"❌ Snapshot '{snapshot_id}' não encontrado")
             return
 
         if args.output:
@@ -220,7 +242,8 @@ class ProteusCLI:
             shutil.copy2(snapshot_path, output_path)
             print(f"✅ Snapshot '{snapshot_id}' exportado com sucesso para:")
             print(f"   {output_path}")
-            print(f"   Tamanho: {output_path.stat().st_size / (1024*1024):.2f} MB")
+            size = output_path.stat().st_size / (1024*1024)
+            print(f"   Tamanho: {size:.2f} MB")
         except Exception as e:
             print(f"❌ Erro ao exportar snapshot: {e}")
 
