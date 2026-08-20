@@ -11,12 +11,12 @@ ProteusOS é um sistema operacional minimalista que implementa conceitos de:
 
 Status do Projeto
 -----------------
-✅ Sistema de build funcionando
-✅ Gerenciamento de snapshots
-✅ Gerenciamento de pacotes
-✅ Sistema de atualizações atômicas
-✅ Rollback para qualquer snapshot
-✅ CLI completa e funcional
+- Sistema de build funcionando
+- Gerenciamento de snapshots
+- Gerenciamento de pacotes
+- Sistema de atualizações atômicas
+- Rollback para qualquer snapshot
+- CLI completa e funcional
 
 Requisitos
 ----------
@@ -35,13 +35,14 @@ chmod +x proteus
 Estrutura do Projeto
 --------------------
 ProteusOS/
-├── proteus              # Script principal executável
-├── src/                 # Código-fonte
-│   ├── cli.py           # Interface de linha de comando
-│   ├── builder.py       # Gerenciador de snapshots
-│   ├── pkg_manager.py   # Gerenciador de pacotes
-│   └── updater.py       # Gerenciador de atualizações
-└── update_example/      # Exemplo de pacote de atualização
+├── proteus                 # Script principal executável
+├── src/                    # Código-fonte
+│   ├── cli.py              # Interface de linha de comando
+│   ├── builder.py          # Gerenciador de snapshots
+│   ├── pkg_manager.py      # Gerenciador de pacotes
+│   └── updater.py          # Gerenciador de atualizações
+├── update_example/         # Exemplo de pacote de atualização
+└── README.md               # Este arquivo
 
 Uso
 ---
