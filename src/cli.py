@@ -8,6 +8,7 @@ import argparse
 import sys
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 # Adiciona o diretório src ao path para importar os módulos
@@ -18,6 +19,7 @@ from pkg_manager import PackageManager
 from updater import SystemUpdater
 from config import Config
 from logger import setup_logging, get_logger
+from drivers import PackageOrchestrator
 
 # Configura logging
 setup_logging()
@@ -41,6 +43,7 @@ class ProteusCLI:
         self.updater = SystemUpdater(self.base_dir)
         self.export_dir = Path.home() / "proteus_exports"
         self.export_dir.mkdir(exist_ok=True)
+        self.orchestrator = PackageOrchestrator()
         logger.info(f"ProteusOS inicializado. Base dir: {self.base_dir}")
 
     def run(self, args=None):
@@ -66,14 +69,20 @@ class ProteusCLI:
         parser_rollback = subparsers.add_parser("rollback", help="Rollback para um snapshot")
         parser_rollback.add_argument("--snapshot-id", help="ID do snapshot específico")
 
-        # Comando: package
-        parser_pkg = subparsers.add_parser("package", help="Gerenciar pacotes")
+        # Comando: package (nativo do ProteusOS)
+        parser_pkg = subparsers.add_parser("package", help="Gerenciar pacotes (nativo)")
         subparsers_pkg = parser_pkg.add_subparsers(dest="pkg_comando", required=True, help="Ações de pacote")
         parser_pkg_install = subparsers_pkg.add_parser("install", help="Instalar um pacote")
         parser_pkg_install.add_argument("package_path", help="Caminho para o pacote")
         parser_pkg_list = subparsers_pkg.add_parser("list", help="Listar pacotes instalados")
         parser_pkg_uninstall = subparsers_pkg.add_parser("uninstall", help="Desinstalar um pacote")
         parser_pkg_uninstall.add_argument("package_id", help="ID do pacote")
+
+        # Comando: pts (gerenciador de pacotes universal)
+        parser_pts = subparsers.add_parser("pts", help="Gerenciador de pacotes universal (APT + DNF + Pacman)")
+        parser_pts.add_argument("action", choices=["install", "remove", "list", "search"], help="Ação a ser realizada")
+        parser_pts.add_argument("package", nargs="?", help="Nome do pacote (para install/remove/search)")
+        parser_pts.add_argument("--driver", choices=["apt", "dnf", "pacman"], help="Forçar um driver específico")
 
         # Comando: config
         parser_config = subparsers.add_parser("config", help="Gerenciar configurações")
@@ -111,6 +120,8 @@ class ProteusCLI:
                 self._cmd_rollback(parsed_args)
             elif parsed_args.comando == "package":
                 self._cmd_package(parsed_args)
+            elif parsed_args.comando == "pts":
+                self._cmd_pts(parsed_args)
             elif parsed_args.comando == "config":
                 self._cmd_config(parsed_args)
             elif parsed_args.comando == "info":
@@ -129,7 +140,7 @@ class ProteusCLI:
     def _cmd_build(self, args):
         print(f"🛠️  Construindo sistema base: {args.base_image}...")
         logger.info(f"Build iniciado: {args.base_image}")
-        
+
         if C_AVAILABLE and args.use_c:
             try:
                 snapshot_id = snapshot.build(args.base_image)
@@ -140,7 +151,7 @@ class ProteusCLI:
                 logger.error(f"Erro no módulo C: {e}")
                 print(f"⚠️  Erro no módulo C: {e}")
                 print("   Usando implementação Python...")
-        
+
         snapshot_id = self.builder.build_base(args.base_image)
         print(f"✅ Sistema construído com sucesso! Snapshot: {snapshot_id}")
         logger.info(f"Build concluído: {snapshot_id}")
@@ -203,6 +214,56 @@ class ProteusCLI:
             print(f"✅ Pacote desinstalado: {result}")
             logger.info(f"Pacote desinstalado: {result}")
 
+    def _cmd_pts(self, args):
+        """Executa o gerenciador de pacotes universal (APT + DNF + Pacman)."""
+        if args.action == "install":
+            if not args.package:
+                print("❌ Especifique um pacote para instalar")
+                logger.error("Comando pts install sem pacote")
+                return
+            print(f"📦 Instalando {args.package} via gerenciador universal...")
+            success = self.orchestrator.install(args.package, args.driver)
+            if success:
+                print(f"✅ Pacote {args.package} instalado com sucesso!")
+            else:
+                print(f"❌ Falha ao instalar {args.package}")
+
+        elif args.action == "remove":
+            if not args.package:
+                print("❌ Especifique um pacote para remover")
+                logger.error("Comando pts remove sem pacote")
+                return
+            print(f"🗑️ Removendo {args.package}...")
+            success = self.orchestrator.remove(args.package, args.driver)
+            if success:
+                print(f"✅ Pacote {args.package} removido com sucesso!")
+            else:
+                print(f"❌ Falha ao remover {args.package}")
+
+        elif args.action == "list":
+            print("📦 Pacotes instalados (via gerenciador universal):")
+            packages = self.orchestrator.list_installed(args.driver)
+            if not packages:
+                print("   (Nenhum pacote encontrado)")
+            for pkg in packages[:20]:
+                print(f"   - {pkg}")
+            if len(packages) > 20:
+                print(f"   ... e mais {len(packages) - 20} pacotes")
+
+        elif args.action == "search":
+            if not args.package:
+                print("❌ Especifique um termo para buscar")
+                logger.error("Comando pts search sem termo")
+                return
+            print(f"🔍 Buscando por: {args.package}")
+            results = self.orchestrator.search(args.package, args.driver)
+            if not results:
+                print("   (Nenhum resultado encontrado)")
+            for result in results[:20]:
+                print(f"   {result}")
+            if len(results) > 20:
+                print(f"   ... e mais {len(results) - 20} resultados")
+
     def _cmd_config(self, args):
         if args.show:
             self.config.show()
@@ -230,6 +291,7 @@ class ProteusCLI:
                     print(f"📸 Snapshot: {target}")
                     print(f"   Base Image: {snap.get('base_image', 'N/A')}")
                     print(f"   Criado em: {snap.get('timestamp', 'N/A')}")
+                    print(f"   Checksum: {snap.get('checksum', 'N/A')[:16]}...")
                     print(f"   Status: {'▶ Ativo' if target == metadata.get('current') else 'Arquivado'}")
                     return
         installed = self.pkg_manager._load_installed()
