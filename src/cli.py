@@ -57,6 +57,7 @@ class ProteusCLI:
         parser_build = subparsers.add_parser("build", help="Construir um sistema base")
         parser_build.add_argument("--base-image", required=True, choices=["alpine", "debian"], help="Imagem base")
         parser_build.add_argument("--use-c", action="store_true", help="Usar implementação em C (experimental)")
+        parser_build.add_argument("--full", action="store_true", help="Criar snapshot completo (não diff)")
 
         # Comando: status
         parser_status = subparsers.add_parser("status", help="Status do sistema e snapshots")
@@ -107,6 +108,17 @@ class ProteusCLI:
         parser_cleanup.add_argument("--keep", type=int, default=5, help="Número de snapshots recentes a manter")
         parser_cleanup.add_argument("--snapshot-id", help="Remover um snapshot específico")
 
+        # Comando: service (gerenciar serviços)
+        parser_service = subparsers.add_parser("service", help="Gerenciar serviços do sistema")
+        parser_service.add_argument("action", choices=["enable", "disable", "start", "stop", "list"], help="Ação a ser realizada")
+        parser_service.add_argument("service_name", nargs="?", help="Nome do serviço")
+
+        # Comando: distro-build (criar ISO)
+        parser_distro = subparsers.add_parser("distro-build", help="Construir uma imagem ISO da distro")
+        parser_distro.add_argument("--snapshot-id", required=True, help="ID do snapshot base")
+        parser_distro.add_argument("--kernel", required=True, help="Caminho para o kernel (vmlinuz)")
+        parser_distro.add_argument("--output", "-o", default="proteusos.iso", help="Nome do arquivo ISO de saída")
+
         parsed_args = parser.parse_args(args)
 
         try:
@@ -132,6 +144,10 @@ class ProteusCLI:
                 self._cmd_import(parsed_args)
             elif parsed_args.comando == "cleanup":
                 self._cmd_cleanup(parsed_args)
+            elif parsed_args.comando == "service":
+                self._cmd_service(parsed_args)
+            elif parsed_args.comando == "distro-build":
+                self._cmd_distro_build(parsed_args)
         except Exception as e:
             logger.error(f"Erro: {e}")
             print(f"❌ Erro: {e}")
@@ -152,13 +168,14 @@ class ProteusCLI:
                 print(f"⚠️  Erro no módulo C: {e}")
                 print("   Usando implementação Python...")
 
-        snapshot_id = self.builder.build_base(args.base_image)
+        snapshot_id = self.builder.build_base(args.base_image, full=args.full)
         print(f"✅ Sistema construído com sucesso! Snapshot: {snapshot_id}")
         logger.info(f"Build concluído: {snapshot_id}")
 
     def _cmd_status(self):
         status = self.builder.get_status()
         current = self.builder.get_current_snapshot()
+        metadata = self.builder._load_metadata()
         print(f"📊 Status do Sistema ProteusOS")
         print(f"   Diretório Base: {self.base_dir}")
         print(f"   Snapshot Atual: {current or 'Nenhum'}")
@@ -166,8 +183,11 @@ class ProteusCLI:
         if not status:
             print("     (Nenhum snapshot encontrado)")
         for snap in status:
+            # Busca informações adicionais
+            info = next((s for s in metadata["snapshots"] if s["id"] == snap), {})
+            full_marker = " (full)" if info.get("full", True) else " (diff)"
             marker = " ▶" if snap == current else ""
-            print(f"     - {snap}{marker}")
+            print(f"     - {snap}{full_marker}{marker}")
         logger.debug(f"Status: {len(status)} snapshots, atual: {current}")
 
     def _cmd_update(self, args):
@@ -292,6 +312,10 @@ class ProteusCLI:
                     print(f"   Base Image: {snap.get('base_image', 'N/A')}")
                     print(f"   Criado em: {snap.get('timestamp', 'N/A')}")
                     print(f"   Checksum: {snap.get('checksum', 'N/A')[:16]}...")
+                    print(f"   Tipo: {'Completo' if snap.get('full', True) else 'Diff'}")
+                    parent = snap.get('parent')
+                    if parent:
+                        print(f"   Base: {parent}")
                     print(f"   Status: {'▶ Ativo' if target == metadata.get('current') else 'Arquivado'}")
                     return
         installed = self.pkg_manager._load_installed()
@@ -373,7 +397,8 @@ class ProteusCLI:
                 metadata["snapshots"].append({
                     "id": snapshot_id,
                     "base_image": base_image,
-                    "timestamp": "imported"
+                    "timestamp": "imported",
+                    "full": True
                 })
                 self.builder._save_metadata(metadata)
                 print(f"📝 Metadados atualizados para o snapshot importado.")
@@ -441,6 +466,74 @@ class ProteusCLI:
         metadata["snapshots"] = [s for s in metadata["snapshots"] if s["id"] in snapshots_ordenados[:args.keep] or s["id"] == current_snapshot]
         self.builder._save_metadata(metadata)
         print(f"✅ Limpeza concluída! Mantidos {args.keep} snapshots recentes.")
+
+    def _cmd_service(self, args):
+        """Gerencia serviços do sistema."""
+        from init_manager import InitManager
+        manager = InitManager()
+
+        if args.action == "list":
+            services = manager.list_services()
+            if not services:
+                print("📋 Nenhum serviço encontrado.")
+                return
+            print(f"📋 Serviços ativos ({len(services)}):")
+            for svc in services[:20]:
+                print(f"   - {svc}")
+            if len(services) > 20:
+                print(f"   ... e mais {len(services) - 20} serviços")
+
+        elif args.action == "enable":
+            if not args.service_name:
+                print("❌ Especifique o nome do serviço")
+                return
+            if manager.enable_service(args.service_name):
+                print(f"✅ Serviço '{args.service_name}' habilitado com sucesso!")
+            else:
+                print(f"❌ Falha ao habilitar '{args.service_name}'")
+
+        elif args.action == "disable":
+            if not args.service_name:
+                print("❌ Especifique o nome do serviço")
+                return
+            if manager.disable_service(args.service_name):
+                print(f"✅ Serviço '{args.service_name}' desabilitado com sucesso!")
+            else:
+                print(f"❌ Falha ao desabilitar '{args.service_name}'")
+
+        elif args.action == "start":
+            if not args.service_name:
+                print("❌ Especifique o nome do serviço")
+                return
+            if manager.start_service(args.service_name):
+                print(f"✅ Serviço '{args.service_name}' iniciado com sucesso!")
+            else:
+                print(f"❌ Falha ao iniciar '{args.service_name}'")
+
+        elif args.action == "stop":
+            if not args.service_name:
+                print("❌ Especifique o nome do serviço")
+                return
+            if manager.stop_service(args.service_name):
+                print(f"✅ Serviço '{args.service_name}' parado com sucesso!")
+            else:
+                print(f"❌ Falha ao parar '{args.service_name}'")
+
+    def _cmd_distro_build(self, args):
+        """Constrói uma imagem ISO da distro."""
+        from distro_builder import DistroBuilder
+        builder = DistroBuilder(self.base_dir)
+        print(f"🔨 Construindo ISO do ProteusOS...")
+        print(f"   Snapshot: {args.snapshot_id}")
+        print(f"   Kernel: {args.kernel}")
+        print(f"   Saída: {args.output}")
+
+        if builder.build_iso(args.snapshot_id, Path(args.kernel), args.output):
+            print(f"✅ ISO gerada com sucesso: {args.output}")
+            print(f"   Use: sudo dd if={args.output} of=/dev/sdX bs=4M status=progress")
+        else:
+            print(f"❌ Falha ao gerar ISO")
+            print(f"   Certifique-se de que o xorriso está instalado: sudo apt install xorriso")
 
 def main():
     cli = ProteusCLI()

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ProteusOS - SystemBuilder
-Gerencia a criação e versionamento de snapshots (imagens atômicas).
+Gerencia a criação e versionamento de snapshots (imagens atômicas) com suporte a diffs.
 """
 
 import os
@@ -13,6 +13,7 @@ import re
 import hashlib
 from pathlib import Path
 from typing import List, Dict, Optional
+import subprocess
 
 from constants import (
     SNAPSHOTS_DIR, METADATA_FILE, METADATA_BACKUP,
@@ -30,11 +31,13 @@ class SystemBuilder:
         self.snapshots_dir = self.base_dir / SNAPSHOTS_DIR
         self.metadata_file = self.base_dir / METADATA_FILE
         self.lock_file = self.base_dir / "builder.lock"
+        self.diff_dir = self.base_dir / "diffs"
         self._ensure_directories()
 
     def _ensure_directories(self):
         """Cria os diretórios necessários."""
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
+        self.diff_dir.mkdir(parents=True, exist_ok=True)
         logger.debug(f"Diretórios criados em: {self.base_dir}")
 
     def _load_metadata(self) -> Dict:
@@ -52,8 +55,8 @@ class SystemBuilder:
                         with open(backup_file, 'r') as f:
                             return json.load(f)
                     logger.error("Não foi possível recuperar metadados. Criando novo.")
-                    return {"snapshots": [], "current": None}
-            return {"snapshots": [], "current": None}
+                    return {"snapshots": [], "current": None, "diffs": []}
+            return {"snapshots": [], "current": None, "diffs": []}
 
     def _save_metadata(self, metadata: Dict):
         """Salva os metadados com backup automático e locking."""
@@ -88,25 +91,58 @@ class SystemBuilder:
                 sha256_hash.update(byte_block)
         return sha256_hash.hexdigest()
 
+    def _create_diff(self, base_id: str, new_id: str) -> bool:
+        """Cria um diff entre dois snapshots usando rsync."""
+        base_path = self.snapshots_dir / f"{base_id}.tar.gz"
+        new_path = self.snapshots_dir / f"{new_id}.tar.gz"
+        diff_path = self.diff_dir / f"{base_id}--{new_id}.diff"
+
+        if not base_path.exists() or not new_path.exists():
+            logger.error("Snapshots base ou novo não encontrados para diff.")
+            return False
+
+        try:
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmpdir:
+                base_dir = Path(tmpdir) / "base"
+                new_dir = Path(tmpdir) / "new"
+                base_dir.mkdir()
+                new_dir.mkdir()
+
+                subprocess.run(["tar", "-xzf", str(base_path), "-C", str(base_dir)], check=True)
+                subprocess.run(["tar", "-xzf", str(new_path), "-C", str(new_dir)], check=True)
+
+                cmd = ["rsync", "-avn", "--delete", f"{base_dir}/", f"{new_dir}/"]
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                diff_content = result.stdout
+
+                with open(diff_path, 'w') as f:
+                    f.write(diff_content)
+
+            return True
+        except Exception as e:
+            logger.error(f"Erro ao criar diff: {e}")
+            return False
+
     def snapshot_exists(self, snapshot_id: str) -> bool:
         """Verifica se um snapshot existe."""
         safe_id = self._sanitize_filename(snapshot_id)
         snapshot_path = self.snapshots_dir / f"{safe_id}.tar.gz"
         return snapshot_path.exists()
 
-    def build_base(self, base_image: str) -> str:
+    def build_base(self, base_image: str, full: bool = True) -> str:
         """
         Constrói um sistema base a partir de uma imagem.
-        Na prática, cria um snapshot com uma estrutura de diretórios simulada.
+        Se full=True, cria um snapshot completo. Caso contrário, cria um diff.
         """
         logger.info(f"Iniciando build da imagem base: {base_image}")
-        
+
         safe_image = self._sanitize_filename(base_image)
         snapshot_id = self._generate_snapshot_id(safe_image)
         snapshot_path = self.snapshots_dir / f"{snapshot_id}.tar.gz"
 
         print(f"   Construindo imagem base '{safe_image}'...")
-        
+
         with tarfile.open(snapshot_path, "w:gz") as tar:
             temp_dir = self.base_dir / "temp_build"
             temp_dir.mkdir(exist_ok=True)
@@ -124,15 +160,21 @@ class SystemBuilder:
 
             shutil.rmtree(temp_dir)
 
-        # Calcula o checksum do snapshot
         checksum = self._calculate_checksum(snapshot_path)
 
         metadata = self._load_metadata()
+
+        if not full and metadata["snapshots"]:
+            last_snapshot = metadata["snapshots"][-1]["id"]
+            self._create_diff(last_snapshot, snapshot_id)
+
         metadata["snapshots"].append({
             "id": snapshot_id,
             "base_image": safe_image,
             "timestamp": datetime.datetime.now().isoformat(),
-            "checksum": checksum
+            "checksum": checksum,
+            "full": full,
+            "parent": metadata["snapshots"][-1]["id"] if not full and metadata["snapshots"] else None
         })
         metadata["current"] = snapshot_id
         self._save_metadata(metadata)
@@ -153,12 +195,11 @@ class SystemBuilder:
     def rollback_to_snapshot(self, snapshot_id: str) -> bool:
         """
         Realiza rollback para um snapshot específico.
-        Na prática, atualiza o metadado 'current'.
         """
         logger.info(f"Iniciando rollback para: {snapshot_id}")
-        
+
         safe_id = self._sanitize_filename(snapshot_id)
-        
+
         metadata = self._load_metadata()
         snapshots_ids = [s["id"] for s in metadata["snapshots"]]
         if safe_id not in snapshots_ids:
@@ -170,21 +211,20 @@ class SystemBuilder:
             logger.error(f"Arquivo do snapshot '{safe_id}' não encontrado")
             raise FileNotFoundError(f"Arquivo do snapshot '{safe_id}' não encontrado")
 
-        # Verifica a integridade do snapshot
         expected_checksum = None
         for snap in metadata["snapshots"]:
             if snap["id"] == safe_id:
                 expected_checksum = snap.get("checksum")
                 break
-        
+
         if expected_checksum:
             current_checksum = self._calculate_checksum(snapshot_path)
             if current_checksum != expected_checksum:
-                logger.error(f"Checksum do snapshot '{safe_id}' não confere. Esperado: {expected_checksum}, Obtido: {current_checksum}")
+                logger.error(f"Checksum do snapshot '{safe_id}' não confere.")
                 raise ValueError(f"Snapshot '{safe_id}' está corrompido")
 
         metadata["current"] = safe_id
         self._save_metadata(metadata)
-        
+
         logger.info(f"Rollback concluído para: {safe_id}")
         return True
