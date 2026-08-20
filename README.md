@@ -1,6 +1,6 @@
 # ProteusOS - Sistema Operacional Minimalista e Modular
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/ojhonatanls/ProteusOS/releases/tag/v1.0.0)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/ojhonatanls/ProteusOS/releases/tag/v1.1.0)
 [![Python](https://img.shields.io/badge/python-3.10+-green.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-orange.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://img.shields.io/badge/tests-4%20passing-brightgreen.svg)](https://github.com/ojhonatanls/ProteusOS/actions)
@@ -16,16 +16,18 @@ ProteusOS é um sistema operacional minimalista que implementa conceitos de:
 
 ## Status do Projeto
 
--  Sistema de build funcionando
--  Gerenciamento de snapshots
--  Gerenciamento de pacotes com dependências
--  Sistema de atualizações atômicas
--  Rollback para qualquer snapshot
--  CLI completa e funcional
--  Modo shell interativo
--  Gerenciador de configuração
--  Testes automatizados
--  Comando info para detalhes
+- Sistema de build funcionando
+- Gerenciamento de snapshots
+- Gerenciamento de pacotes com dependências
+- Sistema de atualizações atômicas
+- Rollback para qualquer snapshot
+- CLI completa e funcional
+- Modo shell interativo
+- Gerenciador de configuração
+- Testes automatizados
+- Comando info para detalhes
+- Export/Import de snapshots
+- Cleanup de snapshots antigos
 
 ## Requisitos
 
@@ -66,6 +68,7 @@ ProteusOS/
 ## Uso
 
 ### Modo CLI (Tradicional)
+
 ```bash
 # Construir um sistema base
 ./proteus build --base-image alpine
@@ -93,9 +96,21 @@ ProteusOS/
 # Informações detalhadas
 ./proteus info snapshot_20260820_100752_alpine
 ./proteus info pkg_20260820_094901
+
+# Exportar snapshot
+./proteus export snapshot_20260820_111526_alpine
+./proteus export snapshot_20260820_111526_alpine --output ~/backups/meu_snapshot.tar.gz
+
+# Importar snapshot
+./proteus import ~/proteus_exports/snapshot_20260820_111526_alpine.tar.gz
+
+# Limpar snapshots antigos
+./proteus cleanup --keep 3
+./proteus cleanup --snapshot-id snapshot_20260820_111526_debian
 ```
 
 ### Modo Shell Interativo
+
 ```bash
 # Entrar no shell
 ./proteus shell
@@ -106,10 +121,13 @@ proteus> build --base-image alpine
 proteus> package list
 proteus> info pkg_20260820_094901
 proteus> config --show
+proteus> export snapshot_20260820_111526_alpine
+proteus> cleanup --keep 3
 proteus> exit
 ```
 
 ### Comandos do Shell
+
 | Comando | Descrição | Exemplo |
 |---------|-----------|---------|
 | `build` | Construir sistema base | `build --base-image alpine` |
@@ -119,6 +137,9 @@ proteus> exit
 | `package` | Gerenciar pacotes | `package install pacote.tar.gz` |
 | `config` | Gerenciar configurações | `config --show` |
 | `info` | Informações detalhadas | `info snapshot_ID` |
+| `export` | Exportar snapshot | `export snapshot_ID` |
+| `import` | Importar snapshot | `import /path/to/file.tar.gz` |
+| `cleanup` | Limpar snapshots antigos | `cleanup --keep 3` |
 | `clear` | Limpar tela | `clear` |
 | `help` | Mostrar ajuda | `help` |
 | `exit`/`quit` | Sair do shell | `exit` |
@@ -160,31 +181,40 @@ tar -czf meu_pacote.tar.gz -C meu_pacote .
 ./proteus package list
 ```
 
-### 6. Criar e aplicar uma atualização
+### 6. Exportar um snapshot
 ```bash
-mkdir -p minha_atualizacao
-echo 'echo "Atualização aplicada com sucesso!"' > minha_atualizacao/update.sh
-chmod +x minha_atualizacao/update.sh
-echo '{"version": "1.1", "changelog": "Primeira atualização"}' > minha_atualizacao/metadata.json
-tar -czf minha_atualizacao.tar.gz -C minha_atualizacao .
-./proteus update minha_atualizacao.tar.gz
+# Exportar para o diretório padrão (~/proteus_exports/)
+./proteus export snapshot_20260820_111526_alpine
+
+# Exportar para um local específico
+./proteus export snapshot_20260820_111526_alpine --output ~/backups/meu_snapshot.tar.gz
 ```
 
-### 7. Rollback para um snapshot anterior
+### 7. Importar um snapshot
 ```bash
-./proteus rollback --snapshot-id snapshot_20260820_094557_alpine
+./proteus import ~/proteus_exports/snapshot_20260820_111526_alpine.tar.gz
 ```
 
-### 8. Usar o shell interativo
+### 8. Limpar snapshots antigos
+```bash
+# Manter apenas os 3 mais recentes
+./proteus cleanup --keep 3
+
+# Remover um snapshot específico
+./proteus cleanup --snapshot-id snapshot_20260820_111526_debian
+```
+
+### 9. Usar o shell interativo
 ```bash
 ./proteus shell
 proteus> status
 proteus> build --base-image debian
 proteus> package list
+proteus> export snapshot_20260820_111526_alpine
 proteus> exit
 ```
 
-### 9. Ver informações detalhadas
+### 10. Ver informações detalhadas
 ```bash
 # Informações de um snapshot
 ./proteus info snapshot_20260820_100752_alpine
@@ -193,7 +223,7 @@ proteus> exit
 ./proteus info pkg_20260820_094901
 ```
 
-### 10. Gerenciar configurações
+### 11. Gerenciar configurações
 ```bash
 # Mostrar configurações atuais
 ./proteus config --show
@@ -217,7 +247,7 @@ Gerencia pacotes de forma transacional, permitindo instalação e desinstalaçã
 Gerencia atualizações do sistema com garantias de atomicidade e rollback automático.
 
 **CLI (cli.py)**
-Interface de linha de comando que expõe todas as funcionalidades, incluindo configuração e informações detalhadas.
+Interface de linha de comando que expõe todas as funcionalidades, incluindo export/import e cleanup.
 
 **Config (config.py)**
 Gerenciador de configuração centralizado com suporte a arquivo `~/.proteusrc`.
@@ -236,6 +266,9 @@ Modo interativo para executar comandos do ProteusOS em um ambiente shell persist
 | `package` | Gerenciar pacotes (install/list/uninstall) |
 | `config` | Gerenciar configurações (--show/--set) |
 | `info` | Informações detalhadas de snapshot/pacote |
+| `export` | Exportar snapshot para arquivo .tar.gz |
+| `import` | Importar snapshot de arquivo .tar.gz |
+| `cleanup` | Remover snapshots antigos |
 | `shell` | Modo shell interativo |
 
 ## Configuração
