@@ -1,6 +1,7 @@
+
 # ProteusOS - Sistema Operacional Minimalista e Modular
 
-[![Version](https://img.shields.io/badge/version-2.0.1-blue.svg)](https://github.com/ojhonatanls/ProteusOS/releases/tag/v1.0.0)
+[![Version](https://img.shields.io/badge/version-2.0.1-blue.svg)](https://github.com/ojhonatanls/ProteusOS/releases/tag/v2.0.1)
 [![Python](https://img.shields.io/badge/python-3.10+-green.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-orange.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://img.shields.io/badge/tests-4%20passing-brightgreen.svg)](https://github.com/ojhonatanls/ProteusOS/actions)
@@ -14,14 +15,15 @@ ProteusOS é um sistema operacional minimalista que implementa conceitos de:
 - **Gerenciamento Transacional**: Atualizações aplicadas de forma atômica
 - **Arquitetura Modular**: Componentes independentes e substituíveis
 - **Suporte a C**: Módulos em C para operações de alta performance
+- **Integridade Garantida**: Verificação de checksum SHA-256 para snapshots
 
 ## Status do Projeto
 
 - Sistema de build funcionando (Python + C)
-- Gerenciamento de snapshots
+- Gerenciamento de snapshots com checksum SHA-256
 - Gerenciamento de pacotes com dependências
 - Sistema de atualizações atômicas
-- Rollback para qualquer snapshot
+- Rollback para qualquer snapshot com verificação de integridade
 - CLI completa e funcional
 - Modo shell interativo
 - Gerenciador de configuração
@@ -30,6 +32,11 @@ ProteusOS é um sistema operacional minimalista que implementa conceitos de:
 - Export/Import de snapshots
 - Cleanup de snapshots antigos
 - Módulo C para operações críticas
+- Sistema de logging estruturado
+- File locking para operações concorrentes
+- Sanitização de entrada para segurança
+- Backup automático de metadados
+- Sanitização de logs para proteção de dados sensíveis
 
 ## Requisitos
 
@@ -57,11 +64,14 @@ ProteusOS/
 ├── proteus                 # Script principal executável
 ├── src/                    # Código-fonte
 │   ├── cli.py              # Interface de linha de comando
-│   ├── builder.py          # Gerenciador de snapshots
+│   ├── builder.py          # Gerenciador de snapshots (com checksum)
 │   ├── pkg_manager.py      # Gerenciador de pacotes com dependências
 │   ├── updater.py          # Gerenciador de atualizações
 │   ├── config.py           # Gerenciador de configuração
 │   ├── shell.py            # Modo shell interativo
+│   ├── constants.py        # Constantes centralizadas
+│   ├── logger.py           # Sistema de logging estruturado
+│   ├── locking.py          # File locking para concorrência
 │   └── c_bridge/           # Módulos em C
 │       └── snapshot.c      # Implementação em C
 ├── tests/                  # Testes automatizados
@@ -89,7 +99,7 @@ ProteusOS/
 # Aplicar uma atualização
 ./proteus update /path/to/update
 
-# Rollback
+# Rollback (com verificação de integridade)
 ./proteus rollback
 ./proteus rollback --snapshot-id snapshot_20240101_120000_alpine
 
@@ -232,7 +242,7 @@ proteus> exit
 
 ### 11. Ver informações detalhadas
 ```bash
-# Informações de um snapshot
+# Informações de um snapshot (com checksum)
 ./proteus info snapshot_20260820_100752_alpine
 
 # Informações de um pacote
@@ -254,13 +264,13 @@ proteus> exit
 ## Arquitetura
 
 **SystemBuilder (builder.py)**
-Gerencia a criação e versionamento de snapshots. Cada snapshot é uma imagem completa do sistema armazenada como tar.gz.
+Gerencia a criação e versionamento de snapshots. Cada snapshot é uma imagem completa do sistema armazenada como tar.gz, com checksum SHA-256 para garantir integridade.
 
 **PackageManager (pkg_manager.py)**
 Gerencia pacotes de forma transacional, permitindo instalação e desinstalação com rollback. Suporta dependências entre pacotes.
 
 **SystemUpdater (updater.py)**
-Gerencia atualizações do sistema com garantias de atomicidade e rollback automático.
+Gerencia atualizações do sistema com garantias de atomicidade e rollback automático, com verificação de integridade.
 
 **CLI (cli.py)**
 Interface de linha de comando que expõe todas as funcionalidades, incluindo export/import e cleanup.
@@ -273,6 +283,15 @@ Modo interativo para executar comandos do ProteusOS em um ambiente shell persist
 
 **C Bridge (c_bridge/snapshot.c)**
 Módulo em C para operações críticas de snapshot, oferecendo melhor performance.
+
+**Logger (logger.py)**
+Sistema de logging estruturado com níveis de log, arquivo de log e sanitização automática de dados sensíveis.
+
+**Locking (locking.py)**
+Mecanismo de file locking para prevenir corrupção de dados em operações concorrentes.
+
+**Constants (constants.py)**
+Centralização de todas as constantes do sistema para facilitar manutenção.
 
 ## Comandos Disponíveis
 
@@ -327,6 +346,17 @@ python3 -m unittest tests/test_proteus.py -v
 python3 -m unittest tests/test_proteus.py.TestProteusOS.test_build_snapshot -v
 ```
 
+## Logs
+
+O ProteusOS mantém logs estruturados em:
+- **Console**: Saída colorida com níveis de log
+- **Arquivo**: `~/proteus_os/proteusos_YYYYMMDD.log`
+
+Os logs incluem:
+- Timestamp, nível e mensagem
+- Sanitização automática de dados sensíveis
+- Rastreamento de operações críticas
+
 ## Desenvolvimento
 
 ### Adicionar novos comandos
@@ -346,6 +376,17 @@ python3 -m unittest tests/test_proteus.py.TestProteusOS.test_build_snapshot -v
 - **Novos tipos de snapshot**: Modifique `builder.py`
 - **Novos formatos de pacote**: Modifique `pkg_manager.py`
 - **Novos métodos de atualização**: Modifique `updater.py`
+
+## Segurança
+
+O ProteusOS implementa várias camadas de segurança:
+
+- **Sanitização de entrada**: Previne path traversal e injeção
+- **Checksum SHA-256**: Verifica integridade de snapshots
+- **File locking**: Previne corrupção em operações concorrentes
+- **Log sanitization**: Remove informações sensíveis dos logs
+- **Backup automático**: Recupera metadados corrompidos
+- **Validação de dependências**: Verifica pacotes antes da instalação
 
 ## Próximos Passos (Migração para C)
 
