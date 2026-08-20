@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""
+ProteusOS - Script Principal
+Ponto de entrada para o sistema.
+"""
+
+import sys
+import os
+from pathlib import Path
+
+# Adiciona o diretório src ao path
+src_dir = Path(__file__).parent / "src"
+sys.path.insert(0, str(src_dir))
+
+try:
+    from cli import main
+except ImportError as e:
+    print(f"❌ Erro ao importar módulos: {e}")
+    print("   Certifique-se que a pasta 'src/' existe com os arquivos .py")
+    sys.exit(1)
+
+if __name__ == "__main__":
+    main()
