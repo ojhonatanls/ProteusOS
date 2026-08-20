@@ -1,7 +1,6 @@
-
 # ProteusOS - Sistema Operacional Minimalista e Modular
 
-[![Version](https://img.shields.io/badge/version-2.0.1-blue.svg)](https://github.com/ojhonatanls/ProteusOS/releases/tag/v2.0.1)
+[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](https://github.com/ojhonatanls/ProteusOS/releases/tag/v2.1.0)
 [![Python](https://img.shields.io/badge/python-3.10+-green.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-orange.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://img.shields.io/badge/tests-4%20passing-brightgreen.svg)](https://github.com/ojhonatanls/ProteusOS/actions)
@@ -16,6 +15,7 @@ ProteusOS é um sistema operacional minimalista que implementa conceitos de:
 - **Arquitetura Modular**: Componentes independentes e substituíveis
 - **Suporte a C**: Módulos em C para operações de alta performance
 - **Integridade Garantida**: Verificação de checksum SHA-256 para snapshots
+- **Gerenciador Universal**: `pts` - suporte a APT, DNF e Pacman
 
 ## Status do Projeto
 
@@ -37,12 +37,15 @@ ProteusOS é um sistema operacional minimalista que implementa conceitos de:
 - Sanitização de entrada para segurança
 - Backup automático de metadados
 - Sanitização de logs para proteção de dados sensíveis
+- **Gerenciador de pacotes universal (pts) com APT, DNF e Pacman**
+- **Rollback automático em caso de falha na instalação de pacotes**
 
 ## Requisitos
 
 - Python 3.10+
 - Biblioteca padrão (sem dependências externas)
 - GCC (para compilar módulos C, opcional)
+- APT, DNF ou Pacman (para o gerenciador universal)
 
 ## Instalação
 
@@ -62,6 +65,7 @@ chmod +x proteus
 ```bash
 ProteusOS/
 ├── proteus                 # Script principal executável
+├── pts                     # Alias para o gerenciador universal
 ├── src/                    # Código-fonte
 │   ├── cli.py              # Interface de linha de comando
 │   ├── builder.py          # Gerenciador de snapshots (com checksum)
@@ -72,6 +76,7 @@ ProteusOS/
 │   ├── constants.py        # Constantes centralizadas
 │   ├── logger.py           # Sistema de logging estruturado
 │   ├── locking.py          # File locking para concorrência
+│   ├── drivers.py          # Drivers para APT, DNF e Pacman
 │   └── c_bridge/           # Módulos em C
 │       └── snapshot.c      # Implementação em C
 ├── tests/                  # Testes automatizados
@@ -103,10 +108,17 @@ ProteusOS/
 ./proteus rollback
 ./proteus rollback --snapshot-id snapshot_20240101_120000_alpine
 
-# Gerenciar pacotes
+# Gerenciar pacotes (nativo)
 ./proteus package install /path/to/package
 ./proteus package list
 ./proteus package uninstall package_id
+
+# Gerenciar pacotes (universal - pts)
+./proteus pts list                     # Listar pacotes instalados
+./proteus pts search nginx             # Buscar pacotes
+./proteus pts install htop             # Instalar pacote (com snapshot atômico)
+./proteus pts remove htop              # Remover pacote
+./proteus pts install htop --driver apt # Forçar um driver específico
 
 # Gerenciar configurações
 ./proteus config --show
@@ -139,6 +151,9 @@ proteus> status
 proteus> build --base-image alpine
 proteus> build --base-image alpine --use-c
 proteus> package list
+proteus> pts list
+proteus> pts search nginx
+proteus> pts install htop
 proteus> info pkg_20260820_094901
 proteus> config --show
 proteus> export snapshot_20260820_111526_alpine
@@ -155,7 +170,8 @@ proteus> exit
 | `status` | Ver status do sistema | `status` |
 | `update` | Aplicar atualização | `update /path/to/update` |
 | `rollback` | Rollback para snapshot | `rollback snapshot_ID` |
-| `package` | Gerenciar pacotes | `package install pacote.tar.gz` |
+| `package` | Gerenciar pacotes (nativo) | `package install pacote.tar.gz` |
+| `pts` | Gerenciador universal (APT/DNF/Pacman) | `pts install htop` |
 | `config` | Gerenciar configurações | `config --show` |
 | `info` | Informações detalhadas | `info snapshot_ID` |
 | `export` | Exportar snapshot | `export snapshot_ID` |
@@ -164,6 +180,42 @@ proteus> exit
 | `clear` | Limpar tela | `clear` |
 | `help` | Mostrar ajuda | `help` |
 | `exit`/`quit` | Sair do shell | `exit` |
+
+## Gerenciador de Pacotes Universal (pts)
+
+O `pts` (Proteus Tool Suite) é um gerenciador de pacotes universal que suporta:
+
+| Driver | Sistema | Comando |
+|--------|---------|---------|
+| `apt` | Debian/Ubuntu | `./proteus pts install htop --driver apt` |
+| `dnf` | Fedora/RHEL | `./proteus pts install htop --driver dnf` |
+| `pacman` | Arch Linux | `./proteus pts install htop --driver pacman` |
+
+### Características do `pts`:
+
+- **Detecção automática**: Identifica o sistema e usa o driver correto
+- **Instalação atômica**: Cria snapshot antes e depois da instalação
+- **Rollback automático**: Se a instalação falhar, volta ao snapshot anterior
+- **Multi-plataforma**: Funciona em Debian, Fedora e Arch
+
+### Exemplos com `pts`:
+
+```bash
+# Listar pacotes instalados
+./proteus pts list
+
+# Buscar um pacote
+./proteus pts search nginx
+
+# Instalar um pacote (com snapshot atômico)
+./proteus pts install htop
+
+# Forçar um driver específico
+./proteus pts install htop --driver apt
+
+# Remover um pacote
+./proteus pts remove htop
+```
 
 ## Exemplos Práticos
 
@@ -182,32 +234,31 @@ proteus> exit
 ./proteus status
 ```
 
-### 4. Criar um pacote de exemplo com dependências
+### 4. Instalar um pacote com rollback automático
 ```bash
-mkdir -p meu_pacote
-echo '{
-  "name": "hello-world",
-  "version": "1.0",
-  "dependencies": {
-    "base": "1.0"
-  }
-}' > meu_pacote/package.json
-echo 'echo "Hello from ProteusOS"' > meu_pacote/hello.sh
-chmod +x meu_pacote/hello.sh
-tar -czf meu_pacote.tar.gz -C meu_pacote .
+# Instalar htop (cria snapshot pré e pós-instalação)
+./proteus pts install htop
+
+# Se falhar, rollback automático é feito
+./proteus pts install pacote-inexistente
 ```
 
-### 5. Instalar o pacote
+### 5. Listar pacotes instalados
 ```bash
-./proteus package install meu_pacote.tar.gz
+./proteus pts list
 ```
 
-### 6. Listar pacotes instalados
+### 6. Buscar pacotes
 ```bash
-./proteus package list
+./proteus pts search nginx
 ```
 
-### 7. Exportar um snapshot
+### 7. Remover um pacote
+```bash
+./proteus pts remove htop
+```
+
+### 8. Exportar um snapshot
 ```bash
 # Exportar para o diretório padrão (~/proteus_exports/)
 ./proteus export snapshot_20260820_111526_alpine
@@ -216,12 +267,12 @@ tar -czf meu_pacote.tar.gz -C meu_pacote .
 ./proteus export snapshot_20260820_111526_alpine --output ~/backups/meu_snapshot.tar.gz
 ```
 
-### 8. Importar um snapshot
+### 9. Importar um snapshot
 ```bash
 ./proteus import ~/proteus_exports/snapshot_20260820_111526_alpine.tar.gz
 ```
 
-### 9. Limpar snapshots antigos
+### 10. Limpar snapshots antigos
 ```bash
 # Manter apenas os 3 mais recentes
 ./proteus cleanup --keep 3
@@ -230,17 +281,18 @@ tar -czf meu_pacote.tar.gz -C meu_pacote .
 ./proteus cleanup --snapshot-id snapshot_20260820_111526_debian
 ```
 
-### 10. Usar o shell interativo
+### 11. Usar o shell interativo
 ```bash
 ./proteus shell
 proteus> status
 proteus> build --base-image debian --use-c
-proteus> package list
+proteus> pts list
+proteus> pts install htop
 proteus> export snapshot_20260820_111526_alpine
 proteus> exit
 ```
 
-### 11. Ver informações detalhadas
+### 12. Ver informações detalhadas
 ```bash
 # Informações de um snapshot (com checksum)
 ./proteus info snapshot_20260820_100752_alpine
@@ -249,7 +301,7 @@ proteus> exit
 ./proteus info pkg_20260820_094901
 ```
 
-### 12. Gerenciar configurações
+### 13. Gerenciar configurações
 ```bash
 # Mostrar configurações atuais
 ./proteus config --show
@@ -293,6 +345,9 @@ Mecanismo de file locking para prevenir corrupção de dados em operações conc
 **Constants (constants.py)**
 Centralização de todas as constantes do sistema para facilitar manutenção.
 
+**Drivers (drivers.py)**
+Drivers para gerenciadores de pacotes (APT, DNF, Pacman) integrados ao sistema de snapshots.
+
 ## Comandos Disponíveis
 
 | Comando | Descrição |
@@ -302,7 +357,8 @@ Centralização de todas as constantes do sistema para facilitar manutenção.
 | `status` | Status do sistema e snapshots |
 | `update` | Aplicar uma atualização |
 | `rollback` | Rollback para um snapshot |
-| `package` | Gerenciar pacotes (install/list/uninstall) |
+| `package` | Gerenciar pacotes (nativo) |
+| `pts` | Gerenciador de pacotes universal (APT/DNF/Pacman) |
 | `config` | Gerenciar configurações (--show/--set) |
 | `info` | Informações detalhadas de snapshot/pacote |
 | `export` | Exportar snapshot para arquivo .tar.gz |
@@ -376,6 +432,7 @@ Os logs incluem:
 - **Novos tipos de snapshot**: Modifique `builder.py`
 - **Novos formatos de pacote**: Modifique `pkg_manager.py`
 - **Novos métodos de atualização**: Modifique `updater.py`
+- **Novos drivers de pacote**: Modifique `drivers.py`
 
 ## Segurança
 
@@ -387,6 +444,7 @@ O ProteusOS implementa várias camadas de segurança:
 - **Log sanitization**: Remove informações sensíveis dos logs
 - **Backup automático**: Recupera metadados corrompidos
 - **Validação de dependências**: Verifica pacotes antes da instalação
+- **Rollback automático**: Reverte instalações com falha
 
 ## Próximos Passos (Migração para C)
 
