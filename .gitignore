@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Testes
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Arquivos temporários do ProteusOS
+*.tar.gz
+meu_*/
+minha_*/
+*.tar.gz
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Arquivos temporários de teste
+build
+exit
+help
+package
+status

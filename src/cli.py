@@ -15,10 +15,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from builder import SystemBuilder
 from pkg_manager import PackageManager
 from updater import SystemUpdater
+from config import Config
 
 class ProteusCLI:
     def __init__(self):
-        self.base_dir = Path.home() / "proteus_os"
+        self.config = Config()
+        self.base_dir = Path(self.config.get("base_dir", str(Path.home() / "proteus_os")))
         self.builder = SystemBuilder(self.base_dir)
         self.pkg_manager = PackageManager(self.base_dir)
         self.updater = SystemUpdater(self.base_dir)
@@ -60,6 +62,15 @@ class ProteusCLI:
         parser_pkg_uninstall = subparsers_pkg.add_parser("uninstall", help="Desinstalar um pacote")
         parser_pkg_uninstall.add_argument("package_id", help="ID do pacote")
 
+        # Comando: config
+        parser_config = subparsers.add_parser("config", help="Gerenciar configurações")
+        parser_config.add_argument("--show", action="store_true", help="Mostrar configurações atuais")
+        parser_config.add_argument("--set", nargs=2, metavar=("KEY", "VALUE"), help="Definir uma configuração")
+
+        # Comando: info
+        parser_info = subparsers.add_parser("info", help="Informações detalhadas de um snapshot ou pacote")
+        parser_info.add_argument("target", help="ID do snapshot ou pacote")
+
         parsed_args = parser.parse_args(args)
 
         # Executa o comando
@@ -74,6 +85,10 @@ class ProteusCLI:
                 self._cmd_rollback(parsed_args)
             elif parsed_args.comando == "package":
                 self._cmd_package(parsed_args)
+            elif parsed_args.comando == "config":
+                self._cmd_config(parsed_args)
+            elif parsed_args.comando == "info":
+                self._cmd_info(parsed_args)
         except Exception as e:
             print(f"❌ Erro: {e}")
             sys.exit(1)
@@ -85,13 +100,16 @@ class ProteusCLI:
 
     def _cmd_status(self):
         status = self.builder.get_status()
+        current = self.builder.get_current_snapshot()
         print(f"📊 Status do Sistema ProteusOS")
         print(f"   Diretório Base: {self.base_dir}")
+        print(f"   Snapshot Atual: {current or 'Nenhum'}")
         print(f"   Snapshots Disponíveis:")
         if not status:
             print("     (Nenhum snapshot encontrado)")
         for snap in status:
-            print(f"     - {snap}")
+            marker = " ▶" if snap == current else ""
+            print(f"     - {snap}{marker}")
 
     def _cmd_update(self, args):
         print(f"🔄 Aplicando atualização de: {args.update_path}...")
@@ -123,6 +141,57 @@ class ProteusCLI:
             print(f"🗑️  Desinstalando pacote: {args.package_id}...")
             result = self.pkg_manager.uninstall(args.package_id)
             print(f"✅ Pacote desinstalado: {result}")
+
+    def _cmd_config(self, args):
+        """Gerencia as configurações do sistema."""
+        if args.show:
+            self.config.show()
+        elif args.set:
+            key, value = args.set
+            # Tenta converter para o tipo apropriado
+            if value.lower() == "true":
+                value = True
+            elif value.lower() == "false":
+                value = False
+            elif value.isdigit():
+                value = int(value)
+            self.config.set(key, value)
+            print(f"✅ Configuração definida: {key} = {value}")
+        else:
+            print("❌ Uso: config --show ou config --set KEY VALUE")
+
+    def _cmd_info(self, args):
+        """Mostra informações detalhadas de um snapshot ou pacote."""
+        target = args.target
+        
+        # Verifica se é um snapshot
+        snapshots = self.builder.get_status()
+        if target in snapshots:
+            metadata = self.builder._load_metadata()
+            for snap in metadata["snapshots"]:
+                if snap["id"] == target:
+                    print(f"📸 Snapshot: {target}")
+                    print(f"   Base Image: {snap.get('base_image', 'N/A')}")
+                    print(f"   Criado em: {snap.get('timestamp', 'N/A')}")
+                    print(f"   Status: {'▶ Ativo' if target == metadata.get('current') else 'Arquivado'}")
+                    return
+        
+        # Verifica se é um pacote
+        installed = self.pkg_manager._load_installed()
+        for pkg in installed["packages"]:
+            if pkg["id"] == target:
+                print(f"📦 Pacote: {pkg.get('name', 'N/A')}")
+                print(f"   Versão: {pkg.get('version', 'N/A')}")
+                print(f"   ID: {pkg['id']}")
+                print(f"   Instalado em: {pkg.get('timestamp', 'N/A')}")
+                deps = pkg.get("dependencies", {})
+                if deps:
+                    print(f"   Dependências: {', '.join([f'{k}=={v}' for k, v in deps.items()])}")
+                else:
+                    print("   Dependências: Nenhuma")
+                return
+        
+        print(f"❌ Nenhum snapshot ou pacote encontrado com ID: {target}")
 
 def main():
     cli = ProteusCLI()

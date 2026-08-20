@@ -13,11 +13,21 @@ src_dir = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_dir))
 
 try:
-    from cli import main
+    from cli import main as cli_main
 except ImportError as e:
     print(f"❌ Erro ao importar módulos: {e}")
     print("   Certifique-se que a pasta 'src/' existe com os arquivos .py")
     sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    # Se o primeiro argumento for 'shell', entra no modo interativo
+    if len(sys.argv) > 1 and sys.argv[1] == "shell":
+        try:
+            from shell import main as shell_main
+            shell_main()
+        except ImportError as e:
+            print(f"❌ Erro ao carregar modo shell: {e}")
+            print("   Verifique se o arquivo src/shell.py existe")
+            sys.exit(1)
+    else:
+        cli_main()
