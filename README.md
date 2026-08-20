@@ -34,15 +34,17 @@ chmod +x proteus
 
 Estrutura do Projeto
 --------------------
+
+```bash
 ProteusOS/
-├── proteus                 # Script principal executável
-├── src/                    # Código-fonte
-│   ├── cli.py              # Interface de linha de comando
-│   ├── builder.py          # Gerenciador de snapshots
-│   ├── pkg_manager.py      # Gerenciador de pacotes
-│   └── updater.py          # Gerenciador de atualizações
-├── update_example/         # Exemplo de pacote de atualização
-└── README.md               # Este arquivo
+├── proteus
+├── src/
+│   ├── cli.py
+│   ├── builder.py
+│   ├── pkg_manager.py
+│   └── updater.py
+├── update_example/
+└── README.md              # Este arquivo
 
 Uso
 ---
