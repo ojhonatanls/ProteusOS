@@ -16,16 +16,16 @@ ProteusOS é um sistema operacional minimalista que implementa conceitos de:
 
 ## Status do Projeto
 
-✅ Sistema de build funcionando
-✅ Gerenciamento de snapshots
-✅ Gerenciamento de pacotes com dependências
-✅ Sistema de atualizações atômicas
-✅ Rollback para qualquer snapshot
-✅ CLI completa e funcional
-✅ Modo shell interativo
-✅ Gerenciador de configuração
-✅ Testes automatizados
-✅ Comando info para detalhes
+-  Sistema de build funcionando
+-  Gerenciamento de snapshots
+-  Gerenciamento de pacotes com dependências
+-  Sistema de atualizações atômicas
+-  Rollback para qualquer snapshot
+-  CLI completa e funcional
+-  Modo shell interativo
+-  Gerenciador de configuração
+-  Testes automatizados
+-  Comando info para detalhes
 
 ## Requisitos
 
