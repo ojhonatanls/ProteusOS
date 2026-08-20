@@ -40,6 +40,11 @@ class SystemBuilder:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         return f"snapshot_{timestamp}_{base_image}"
 
+    def snapshot_exists(self, snapshot_id: str) -> bool:
+        """Verifica se um snapshot existe."""
+        snapshot_path = self.snapshots_dir / f"{snapshot_id}.tar.gz"
+        return snapshot_path.exists()
+
     def build_base(self, base_image: str) -> str:
         """
         Constrói um sistema base a partir de uma imagem.

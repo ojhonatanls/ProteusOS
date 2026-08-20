@@ -7,6 +7,7 @@ Gerencia os comandos do usuário e orquestra as ações.
 import argparse
 import sys
 import os
+import shutil
 from pathlib import Path
 
 # Adiciona o diretório src ao path para importar os módulos
@@ -24,6 +25,8 @@ class ProteusCLI:
         self.builder = SystemBuilder(self.base_dir)
         self.pkg_manager = PackageManager(self.base_dir)
         self.updater = SystemUpdater(self.base_dir)
+        self.export_dir = Path.home() / "proteus_exports"
+        self.export_dir.mkdir(exist_ok=True)
 
     def run(self, args=None):
         parser = argparse.ArgumentParser(
@@ -50,15 +53,9 @@ class ProteusCLI:
         # Comando: package
         parser_pkg = subparsers.add_parser("package", help="Gerenciar pacotes")
         subparsers_pkg = parser_pkg.add_subparsers(dest="pkg_comando", required=True, help="Ações de pacote")
-
-        # Subcomando: package install
         parser_pkg_install = subparsers_pkg.add_parser("install", help="Instalar um pacote")
         parser_pkg_install.add_argument("package_path", help="Caminho para o pacote")
-
-        # Subcomando: package list
         parser_pkg_list = subparsers_pkg.add_parser("list", help="Listar pacotes instalados")
-
-        # Subcomando: package uninstall
         parser_pkg_uninstall = subparsers_pkg.add_parser("uninstall", help="Desinstalar um pacote")
         parser_pkg_uninstall.add_argument("package_id", help="ID do pacote")
 
@@ -71,9 +68,22 @@ class ProteusCLI:
         parser_info = subparsers.add_parser("info", help="Informações detalhadas de um snapshot ou pacote")
         parser_info.add_argument("target", help="ID do snapshot ou pacote")
 
+        # Comando: export
+        parser_export = subparsers.add_parser("export", help="Exportar um snapshot para um arquivo .tar.gz")
+        parser_export.add_argument("snapshot_id", help="ID do snapshot a ser exportado")
+        parser_export.add_argument("--output", "-o", help="Caminho do arquivo de saída (padrão: ~/proteus_exports/<snapshot_id>.tar.gz)")
+
+        # Comando: import
+        parser_import = subparsers.add_parser("import", help="Importar um snapshot de um arquivo .tar.gz")
+        parser_import.add_argument("file_path", help="Caminho do arquivo .tar.gz a ser importado")
+
+        # Comando: cleanup
+        parser_cleanup = subparsers.add_parser("cleanup", help="Remover snapshots antigos")
+        parser_cleanup.add_argument("--keep", type=int, default=5, help="Número de snapshots recentes a manter (padrão: 5)")
+        parser_cleanup.add_argument("--snapshot-id", help="Remover um snapshot específico")
+
         parsed_args = parser.parse_args(args)
 
-        # Executa o comando
         try:
             if parsed_args.comando == "build":
                 self._cmd_build(parsed_args)
@@ -89,6 +99,12 @@ class ProteusCLI:
                 self._cmd_config(parsed_args)
             elif parsed_args.comando == "info":
                 self._cmd_info(parsed_args)
+            elif parsed_args.comando == "export":
+                self._cmd_export(parsed_args)
+            elif parsed_args.comando == "import":
+                self._cmd_import(parsed_args)
+            elif parsed_args.comando == "cleanup":
+                self._cmd_cleanup(parsed_args)
         except Exception as e:
             print(f"❌ Erro: {e}")
             sys.exit(1)
@@ -143,12 +159,10 @@ class ProteusCLI:
             print(f"✅ Pacote desinstalado: {result}")
 
     def _cmd_config(self, args):
-        """Gerencia as configurações do sistema."""
         if args.show:
             self.config.show()
         elif args.set:
             key, value = args.set
-            # Tenta converter para o tipo apropriado
             if value.lower() == "true":
                 value = True
             elif value.lower() == "false":
@@ -161,10 +175,7 @@ class ProteusCLI:
             print("❌ Uso: config --show ou config --set KEY VALUE")
 
     def _cmd_info(self, args):
-        """Mostra informações detalhadas de um snapshot ou pacote."""
         target = args.target
-        
-        # Verifica se é um snapshot
         snapshots = self.builder.get_status()
         if target in snapshots:
             metadata = self.builder._load_metadata()
@@ -175,8 +186,6 @@ class ProteusCLI:
                     print(f"   Criado em: {snap.get('timestamp', 'N/A')}")
                     print(f"   Status: {'▶ Ativo' if target == metadata.get('current') else 'Arquivado'}")
                     return
-        
-        # Verifica se é um pacote
         installed = self.pkg_manager._load_installed()
         for pkg in installed["packages"]:
             if pkg["id"] == target:
@@ -190,8 +199,133 @@ class ProteusCLI:
                 else:
                     print("   Dependências: Nenhuma")
                 return
-        
         print(f"❌ Nenhum snapshot ou pacote encontrado com ID: {target}")
+
+    def _cmd_export(self, args):
+        snapshot_id = args.snapshot_id
+        snapshot_path = self.builder.snapshots_dir / f"{snapshot_id}.tar.gz"
+
+        if not snapshot_path.exists():
+            print(f"❌ Snapshot '{snapshot_id}' não encontrado em {snapshot_path}")
+            return
+
+        if args.output:
+            output_path = Path(args.output)
+        else:
+            output_path = self.export_dir / f"{snapshot_id}.tar.gz"
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            shutil.copy2(snapshot_path, output_path)
+            print(f"✅ Snapshot '{snapshot_id}' exportado com sucesso para:")
+            print(f"   {output_path}")
+            print(f"   Tamanho: {output_path.stat().st_size / (1024*1024):.2f} MB")
+        except Exception as e:
+            print(f"❌ Erro ao exportar snapshot: {e}")
+
+    def _cmd_import(self, args):
+        file_path = Path(args.file_path)
+
+        if not file_path.exists():
+            print(f"❌ Arquivo não encontrado: {file_path}")
+            return
+
+        if not file_path.suffix == '.gz' or not file_path.name.endswith('.tar.gz'):
+            print(f"❌ O arquivo deve ser um .tar.gz válido")
+            return
+
+        snapshot_id = file_path.stem.replace('.tar', '')
+
+        if self.builder.snapshot_exists(snapshot_id):
+            print(f"⚠️  Snapshot '{snapshot_id}' já existe localmente.")
+            resposta = input("   Deseja sobrescrever? (s/N): ")
+            if resposta.lower() != 's':
+                print("❌ Importação cancelada.")
+                return
+
+        destino = self.builder.snapshots_dir / f"{snapshot_id}.tar.gz"
+        try:
+            shutil.copy2(file_path, destino)
+            print(f"✅ Snapshot '{snapshot_id}' importado com sucesso!")
+
+            metadata = self.builder._load_metadata()
+            if not any(s['id'] == snapshot_id for s in metadata["snapshots"]):
+                base_image = "unknown"
+                if "_alpine" in snapshot_id:
+                    base_image = "alpine"
+                elif "_debian" in snapshot_id:
+                    base_image = "debian"
+                elif "_updated" in snapshot_id:
+                    base_image = "updated"
+
+                metadata["snapshots"].append({
+                    "id": snapshot_id,
+                    "base_image": base_image,
+                    "timestamp": "imported"
+                })
+                self.builder._save_metadata(metadata)
+                print(f"📝 Metadados atualizados para o snapshot importado.")
+            else:
+                print(f"ℹ️  Metadados já existentes para este snapshot.")
+        except Exception as e:
+            print(f"❌ Erro ao importar snapshot: {e}")
+
+    def _cmd_cleanup(self, args):
+        if args.snapshot_id:
+            snapshot_path = self.builder.snapshots_dir / f"{args.snapshot_id}.tar.gz"
+            if not snapshot_path.exists():
+                print(f"❌ Snapshot '{args.snapshot_id}' não encontrado")
+                return
+
+            if self.builder.get_current_snapshot() == args.snapshot_id:
+                print(f"⚠️  Não é possível remover o snapshot atual.")
+                return
+
+            resposta = input(f"   Remover snapshot '{args.snapshot_id}' permanentemente? (s/N): ")
+            if resposta.lower() == 's':
+                snapshot_path.unlink()
+                metadata = self.builder._load_metadata()
+                metadata["snapshots"] = [s for s in metadata["snapshots"] if s["id"] != args.snapshot_id]
+                self.builder._save_metadata(metadata)
+                print(f"✅ Snapshot '{args.snapshot_id}' removido com sucesso!")
+            else:
+                print("❌ Operação cancelada.")
+            return
+
+        snapshots = self.builder.get_status()
+        if len(snapshots) <= args.keep:
+            print(f"ℹ️  Apenas {len(snapshots)} snapshots encontrados. Nenhuma ação necessária.")
+            return
+
+        def get_timestamp(snap_id):
+            try:
+                parts = snap_id.split('_')
+                if len(parts) >= 3:
+                    return parts[1] + parts[2]
+            except:
+                pass
+            return "00000000000000"
+
+        snapshots_ordenados = sorted(snapshots, key=get_timestamp, reverse=True)
+        snapshots_para_remover = snapshots_ordenados[args.keep:]
+
+        print(f"🗑️  Removendo {len(snapshots_para_remover)} snapshot(s) antigo(s)...")
+        for snap_id in snapshots_para_remover:
+            if self.builder.get_current_snapshot() == snap_id:
+                print(f"   ⚠️  Pulando snapshot atual: {snap_id}")
+                continue
+
+            snapshot_path = self.builder.snapshots_dir / f"{snap_id}.tar.gz"
+            if snapshot_path.exists():
+                snapshot_path.unlink()
+                print(f"   ✅ Removido: {snap_id}")
+
+        metadata = self.builder._load_metadata()
+        current_snapshot = self.builder.get_current_snapshot()
+        metadata["snapshots"] = [s for s in metadata["snapshots"] if s["id"] in snapshots_ordenados[:args.keep] or s["id"] == current_snapshot]
+        self.builder._save_metadata(metadata)
+        print(f"✅ Limpeza concluída! Mantidos {args.keep} snapshots recentes.")
 
 def main():
     cli = ProteusCLI()
