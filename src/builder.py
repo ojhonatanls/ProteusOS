@@ -10,6 +10,7 @@ import tarfile
 import datetime
 import json
 import re
+import hashlib
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -45,7 +46,6 @@ class SystemBuilder:
                         return json.load(f)
                 except json.JSONDecodeError as e:
                     logger.warning(f"Arquivo de metadados corrompido: {e}")
-                    # Tenta recuperar do backup
                     backup_file = self.metadata_file.with_suffix('.json.bak')
                     if backup_file.exists():
                         logger.info("Recuperando metadados do backup...")
@@ -58,12 +58,9 @@ class SystemBuilder:
     def _save_metadata(self, metadata: Dict):
         """Salva os metadados com backup automático e locking."""
         with file_lock(self.lock_file):
-            # Faz backup do arquivo atual
             if self.metadata_file.exists():
                 shutil.copy2(self.metadata_file, self.metadata_file.with_suffix('.json.bak'))
                 logger.debug("Backup dos metadados criado")
-            
-            # Salva novo metadado
             with open(self.metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2)
             logger.debug("Metadados salvos com sucesso")
@@ -72,9 +69,7 @@ class SystemBuilder:
         """Sanitiza um nome para uso em nomes de arquivos."""
         if not name:
             return "unknown"
-        # Remove caracteres perigosos
         sanitized = re.sub(ALLOWED_FILENAME_CHARS, '_', name)
-        # Limita o tamanho
         if len(sanitized) > MAX_FILENAME_LENGTH:
             sanitized = sanitized[:MAX_FILENAME_LENGTH]
         return sanitized
@@ -84,6 +79,14 @@ class SystemBuilder:
         timestamp = datetime.datetime.now().strftime(DATE_FORMAT)
         safe_image = self._sanitize_filename(base_image)
         return f"{SNAPSHOT_PREFIX}_{timestamp}_{safe_image}"
+
+    def _calculate_checksum(self, file_path: Path) -> str:
+        """Calcula o checksum SHA-256 de um arquivo."""
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
 
     def snapshot_exists(self, snapshot_id: str) -> bool:
         """Verifica se um snapshot existe."""
@@ -102,36 +105,34 @@ class SystemBuilder:
         snapshot_id = self._generate_snapshot_id(safe_image)
         snapshot_path = self.snapshots_dir / f"{snapshot_id}.tar.gz"
 
-        # Cria um snapshot de exemplo (simula a construção)
         print(f"   Construindo imagem base '{safe_image}'...")
         
         with tarfile.open(snapshot_path, "w:gz") as tar:
-            # Cria uma estrutura de diretórios simulada
             temp_dir = self.base_dir / "temp_build"
             temp_dir.mkdir(exist_ok=True)
 
-            # Cria alguns arquivos simulados
             (temp_dir / "etc").mkdir(exist_ok=True)
             (temp_dir / "etc" / "os-release").write_text(f"ID=proteus\nVERSION={safe_image}\n")
             (temp_dir / "bin").mkdir(exist_ok=True)
             (temp_dir / "bin" / "sh").write_text("#!/bin/sh\necho 'ProteusOS Shell'", encoding='utf-8')
             (temp_dir / "bin" / "sh").chmod(0o755)
 
-            # Adiciona ao tar
             for item in temp_dir.rglob("*"):
                 if item.is_file():
                     arcname = str(item.relative_to(temp_dir))
                     tar.add(item, arcname=arcname)
 
-            # Remove o diretório temporário
             shutil.rmtree(temp_dir)
 
-        # Atualiza metadados
+        # Calcula o checksum do snapshot
+        checksum = self._calculate_checksum(snapshot_path)
+
         metadata = self._load_metadata()
         metadata["snapshots"].append({
             "id": snapshot_id,
             "base_image": safe_image,
-            "timestamp": datetime.datetime.now().isoformat()
+            "timestamp": datetime.datetime.now().isoformat(),
+            "checksum": checksum
         })
         metadata["current"] = snapshot_id
         self._save_metadata(metadata)
@@ -158,20 +159,30 @@ class SystemBuilder:
         
         safe_id = self._sanitize_filename(snapshot_id)
         
-        # Verifica se o snapshot existe nos metadados
         metadata = self._load_metadata()
         snapshots_ids = [s["id"] for s in metadata["snapshots"]]
         if safe_id not in snapshots_ids:
             logger.error(f"Snapshot '{safe_id}' não encontrado nos metadados")
             raise ValueError(f"Snapshot '{safe_id}' não encontrado")
 
-        # Verifica se o snapshot existe fisicamente
         snapshot_path = self.snapshots_dir / f"{safe_id}.tar.gz"
         if not snapshot_path.exists():
             logger.error(f"Arquivo do snapshot '{safe_id}' não encontrado")
             raise FileNotFoundError(f"Arquivo do snapshot '{safe_id}' não encontrado")
 
-        # Atualiza o snapshot atual
+        # Verifica a integridade do snapshot
+        expected_checksum = None
+        for snap in metadata["snapshots"]:
+            if snap["id"] == safe_id:
+                expected_checksum = snap.get("checksum")
+                break
+        
+        if expected_checksum:
+            current_checksum = self._calculate_checksum(snapshot_path)
+            if current_checksum != expected_checksum:
+                logger.error(f"Checksum do snapshot '{safe_id}' não confere. Esperado: {expected_checksum}, Obtido: {current_checksum}")
+                raise ValueError(f"Snapshot '{safe_id}' está corrompido")
+
         metadata["current"] = safe_id
         self._save_metadata(metadata)
         
