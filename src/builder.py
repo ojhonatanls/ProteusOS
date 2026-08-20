@@ -9,6 +9,7 @@ import shutil
 import tarfile
 import datetime
 import json
+import re
 from pathlib import Path
 from typing import List, Dict
 
@@ -26,23 +27,42 @@ class SystemBuilder:
     def _load_metadata(self) -> Dict:
         """Carrega os metadados dos snapshots."""
         if self.metadata_file.exists():
-            with open(self.metadata_file, 'r') as f:
-                return json.load(f)
+            try:
+                with open(self.metadata_file, 'r') as f:
+                    return json.load(f)
+            except json.JSONDecodeError:
+                # Se o arquivo estiver corrompido, tenta recuperar de um backup
+                backup_file = self.metadata_file.with_suffix('.json.bak')
+                if backup_file.exists():
+                    with open(backup_file, 'r') as f:
+                        return json.load(f)
+                # Se não houver backup, retorna estado padrão
+                return {"snapshots": [], "current": None}
         return {"snapshots": [], "current": None}
 
     def _save_metadata(self, metadata: Dict):
-        """Salva os metadados."""
+        """Salva os metadados com backup automático."""
+        # Faz backup do arquivo atual
+        if self.metadata_file.exists():
+            shutil.copy2(self.metadata_file, self.metadata_file.with_suffix('.json.bak'))
         with open(self.metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
+
+    def _sanitize_filename(self, name: str) -> str:
+        """Sanitiza um nome para uso em nomes de arquivos."""
+        # Remove caracteres perigosos e substitui espaços por underscores
+        return re.sub(r'[^a-zA-Z0-9_.-]', '_', name)
 
     def _generate_snapshot_id(self, base_image: str) -> str:
         """Gera um ID único para o snapshot."""
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        return f"snapshot_{timestamp}_{base_image}"
+        safe_image = self._sanitize_filename(base_image)
+        return f"snapshot_{timestamp}_{safe_image}"
 
     def snapshot_exists(self, snapshot_id: str) -> bool:
         """Verifica se um snapshot existe."""
-        snapshot_path = self.snapshots_dir / f"{snapshot_id}.tar.gz"
+        safe_id = self._sanitize_filename(snapshot_id)
+        snapshot_path = self.snapshots_dir / f"{safe_id}.tar.gz"
         return snapshot_path.exists()
 
     def build_base(self, base_image: str) -> str:
@@ -50,11 +70,12 @@ class SystemBuilder:
         Constrói um sistema base a partir de uma imagem.
         Na prática, cria um snapshot com uma estrutura de diretórios simulada.
         """
-        snapshot_id = self._generate_snapshot_id(base_image)
+        safe_image = self._sanitize_filename(base_image)
+        snapshot_id = self._generate_snapshot_id(safe_image)
         snapshot_path = self.snapshots_dir / f"{snapshot_id}.tar.gz"
 
         # Cria um snapshot de exemplo (simula a construção)
-        print(f"   Construindo imagem base '{base_image}'...")
+        print(f"   Construindo imagem base '{safe_image}'...")
         with tarfile.open(snapshot_path, "w:gz") as tar:
             # Cria uma estrutura de diretórios simulada
             temp_dir = self.base_dir / "temp_build"
@@ -62,7 +83,7 @@ class SystemBuilder:
 
             # Cria alguns arquivos simulados
             (temp_dir / "etc").mkdir(exist_ok=True)
-            (temp_dir / "etc" / "os-release").write_text(f"ID=proteus\nVERSION={base_image}\n")
+            (temp_dir / "etc" / "os-release").write_text(f"ID=proteus\nVERSION={safe_image}\n")
             (temp_dir / "bin").mkdir(exist_ok=True)
             (temp_dir / "bin" / "sh").write_text("#!/bin/sh\necho 'ProteusOS Shell'", encoding='utf-8')
             (temp_dir / "bin" / "sh").chmod(0o755)
@@ -80,7 +101,7 @@ class SystemBuilder:
         metadata = self._load_metadata()
         metadata["snapshots"].append({
             "id": snapshot_id,
-            "base_image": base_image,
+            "base_image": safe_image,
             "timestamp": datetime.datetime.now().isoformat()
         })
         metadata["current"] = snapshot_id
@@ -103,11 +124,17 @@ class SystemBuilder:
         Realiza rollback para um snapshot específico.
         Na prática, atualiza o metadado 'current'.
         """
+        safe_id = self._sanitize_filename(snapshot_id)
         metadata = self._load_metadata()
         snapshots_ids = [s["id"] for s in metadata["snapshots"]]
-        if snapshot_id not in snapshots_ids:
-            raise ValueError(f"Snapshot '{snapshot_id}' não encontrado")
+        if safe_id not in snapshots_ids:
+            raise ValueError(f"Snapshot '{safe_id}' não encontrado")
 
-        metadata["current"] = snapshot_id
+        # Verifica se o snapshot existe fisicamente
+        snapshot_path = self.snapshots_dir / f"{safe_id}.tar.gz"
+        if not snapshot_path.exists():
+            raise FileNotFoundError(f"Arquivo do snapshot '{safe_id}' não encontrado")
+
+        metadata["current"] = safe_id
         self._save_metadata(metadata)
         return True

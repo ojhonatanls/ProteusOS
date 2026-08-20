@@ -32,3 +32,19 @@ exit
 help
 package
 status
+# Logs
+*.log
+logs/
+
+# Backups
+*.bak
+*.backup
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Python
+*.pyc
+__pycache__/
