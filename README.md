@@ -1,6 +1,6 @@
 # ProteusOS - Sistema Operacional Minimalista e Modular
 
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/ojhonatanls/ProteusOS/releases/tag/v1.1.0)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/ojhonatanls/ProteusOS/releases/tag/v1.0.0)
 [![Python](https://img.shields.io/badge/python-3.10+-green.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-orange.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://img.shields.io/badge/tests-4%20passing-brightgreen.svg)](https://github.com/ojhonatanls/ProteusOS/actions)
@@ -13,10 +13,11 @@ ProteusOS é um sistema operacional minimalista que implementa conceitos de:
 - **Rollback Imediato**: Reversão para estados anteriores em caso de falha
 - **Gerenciamento Transacional**: Atualizações aplicadas de forma atômica
 - **Arquitetura Modular**: Componentes independentes e substituíveis
+- **Suporte a C**: Módulos em C para operações de alta performance
 
 ## Status do Projeto
 
-- Sistema de build funcionando
+- Sistema de build funcionando (Python + C)
 - Gerenciamento de snapshots
 - Gerenciamento de pacotes com dependências
 - Sistema de atualizações atômicas
@@ -28,11 +29,13 @@ ProteusOS é um sistema operacional minimalista que implementa conceitos de:
 - Comando info para detalhes
 - Export/Import de snapshots
 - Cleanup de snapshots antigos
+- Módulo C para operações críticas
 
 ## Requisitos
 
 - Python 3.10+
 - Biblioteca padrão (sem dependências externas)
+- GCC (para compilar módulos C, opcional)
 
 ## Instalação
 
@@ -58,9 +61,12 @@ ProteusOS/
 │   ├── pkg_manager.py      # Gerenciador de pacotes com dependências
 │   ├── updater.py          # Gerenciador de atualizações
 │   ├── config.py           # Gerenciador de configuração
-│   └── shell.py            # Modo shell interativo
+│   ├── shell.py            # Modo shell interativo
+│   └── c_bridge/           # Módulos em C
+│       └── snapshot.c      # Implementação em C
 ├── tests/                  # Testes automatizados
 │   └── test_proteus.py     # Suite de testes
+├── setup.py                # Compilação de módulos C
 ├── update_example/         # Exemplo de pacote de atualização
 └── README.md               # Documentação
 ```
@@ -70,9 +76,12 @@ ProteusOS/
 ### Modo CLI (Tradicional)
 
 ```bash
-# Construir um sistema base
+# Construir um sistema base (Python - estável)
 ./proteus build --base-image alpine
 ./proteus build --base-image debian
+
+# Construir um sistema base (C - experimental, mais rápido)
+./proteus build --base-image alpine --use-c
 
 # Status do sistema
 ./proteus status
@@ -118,6 +127,7 @@ ProteusOS/
 # Dentro do shell, usar comandos diretamente
 proteus> status
 proteus> build --base-image alpine
+proteus> build --base-image alpine --use-c
 proteus> package list
 proteus> info pkg_20260820_094901
 proteus> config --show
@@ -131,6 +141,7 @@ proteus> exit
 | Comando | Descrição | Exemplo |
 |---------|-----------|---------|
 | `build` | Construir sistema base | `build --base-image alpine` |
+| `build --use-c` | Construir com C | `build --base-image alpine --use-c` |
 | `status` | Ver status do sistema | `status` |
 | `update` | Aplicar atualização | `update /path/to/update` |
 | `rollback` | Rollback para snapshot | `rollback snapshot_ID` |
@@ -146,17 +157,22 @@ proteus> exit
 
 ## Exemplos Práticos
 
-### 1. Criar um sistema Alpine
+### 1. Criar um sistema Alpine (Python)
 ```bash
 ./proteus build --base-image alpine
 ```
 
-### 2. Verificar snapshots disponíveis
+### 2. Criar um sistema Alpine (C - mais rápido)
+```bash
+./proteus build --base-image alpine --use-c
+```
+
+### 3. Verificar snapshots disponíveis
 ```bash
 ./proteus status
 ```
 
-### 3. Criar um pacote de exemplo com dependências
+### 4. Criar um pacote de exemplo com dependências
 ```bash
 mkdir -p meu_pacote
 echo '{
@@ -171,17 +187,17 @@ chmod +x meu_pacote/hello.sh
 tar -czf meu_pacote.tar.gz -C meu_pacote .
 ```
 
-### 4. Instalar o pacote
+### 5. Instalar o pacote
 ```bash
 ./proteus package install meu_pacote.tar.gz
 ```
 
-### 5. Listar pacotes instalados
+### 6. Listar pacotes instalados
 ```bash
 ./proteus package list
 ```
 
-### 6. Exportar um snapshot
+### 7. Exportar um snapshot
 ```bash
 # Exportar para o diretório padrão (~/proteus_exports/)
 ./proteus export snapshot_20260820_111526_alpine
@@ -190,12 +206,12 @@ tar -czf meu_pacote.tar.gz -C meu_pacote .
 ./proteus export snapshot_20260820_111526_alpine --output ~/backups/meu_snapshot.tar.gz
 ```
 
-### 7. Importar um snapshot
+### 8. Importar um snapshot
 ```bash
 ./proteus import ~/proteus_exports/snapshot_20260820_111526_alpine.tar.gz
 ```
 
-### 8. Limpar snapshots antigos
+### 9. Limpar snapshots antigos
 ```bash
 # Manter apenas os 3 mais recentes
 ./proteus cleanup --keep 3
@@ -204,17 +220,17 @@ tar -czf meu_pacote.tar.gz -C meu_pacote .
 ./proteus cleanup --snapshot-id snapshot_20260820_111526_debian
 ```
 
-### 9. Usar o shell interativo
+### 10. Usar o shell interativo
 ```bash
 ./proteus shell
 proteus> status
-proteus> build --base-image debian
+proteus> build --base-image debian --use-c
 proteus> package list
 proteus> export snapshot_20260820_111526_alpine
 proteus> exit
 ```
 
-### 10. Ver informações detalhadas
+### 11. Ver informações detalhadas
 ```bash
 # Informações de um snapshot
 ./proteus info snapshot_20260820_100752_alpine
@@ -223,7 +239,7 @@ proteus> exit
 ./proteus info pkg_20260820_094901
 ```
 
-### 11. Gerenciar configurações
+### 12. Gerenciar configurações
 ```bash
 # Mostrar configurações atuais
 ./proteus config --show
@@ -255,11 +271,15 @@ Gerenciador de configuração centralizado com suporte a arquivo `~/.proteusrc`.
 **Shell (shell.py)**
 Modo interativo para executar comandos do ProteusOS em um ambiente shell persistente.
 
+**C Bridge (c_bridge/snapshot.c)**
+Módulo em C para operações críticas de snapshot, oferecendo melhor performance.
+
 ## Comandos Disponíveis
 
 | Comando | Descrição |
 |---------|-----------|
 | `build` | Construir um sistema base (alpine/debian) |
+| `build --use-c` | Construir usando C (experimental) |
 | `status` | Status do sistema e snapshots |
 | `update` | Aplicar uma atualização |
 | `rollback` | Rollback para um snapshot |
@@ -284,6 +304,18 @@ O ProteusOS usa um arquivo de configuração em `~/.proteusrc`:
 }
 ```
 
+## Compilando o Módulo C
+
+Se você quiser compilar o módulo C manualmente:
+
+```bash
+# Compilar o módulo C
+python3 setup.py build_ext --inplace
+
+# Testar
+python3 -c "import snapshot; print(snapshot.build('teste'))"
+```
+
 ## Testes
 
 O projeto inclui testes automatizados:
@@ -302,6 +334,13 @@ python3 -m unittest tests/test_proteus.py.TestProteusOS.test_build_snapshot -v
 2. Adicione ao parser do `argparse`
 3. Implemente o método `_cmd_*`
 4. Adicione ao shell (`shell.py`) se aplicável
+
+### Adicionar novas funções em C
+1. Edite `src/c_bridge/snapshot.c`
+2. Adicione a função em C
+3. Registre no `PyMethodDef`
+4. Compile com `python3 setup.py build_ext --inplace`
+5. Importe e use no Python
 
 ### Adicionar novas funcionalidades
 - **Novos tipos de snapshot**: Modifique `builder.py`
