@@ -5,12 +5,18 @@ Carrega configurações do arquivo .proteusrc no diretório home.
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Dict, Any
 
+from constants import CONFIG_FILE, DEFAULT_BASE_DIR, DEFAULT_IMAGE
+from logger import get_logger
+
+logger = get_logger()
+
 class Config:
     def __init__(self):
-        self.config_file = Path.home() / ".proteusrc"
+        self.config_file = Path.home() / CONFIG_FILE
         self.config = self._load_config()
 
     def _load_config(self) -> Dict[str, Any]:
@@ -19,16 +25,17 @@ class Config:
             try:
                 with open(self.config_file, 'r') as f:
                     return json.load(f)
-            except json.JSONDecodeError:
-                print("⚠️  Arquivo .proteusrc corrompido. Usando configurações padrão.")
+            except json.JSONDecodeError as e:
+                logger.warning(f"Arquivo de configuração corrompido: {e}")
+                logger.info("Usando configurações padrão")
                 return self._default_config()
         return self._default_config()
 
     def _default_config(self) -> Dict[str, Any]:
         """Configurações padrão"""
         return {
-            "base_dir": str(Path.home() / "proteus_os"),
-            "default_image": "alpine",
+            "base_dir": str(DEFAULT_BASE_DIR),
+            "default_image": DEFAULT_IMAGE,
             "verbose": False,
             "auto_rollback": True
         }
@@ -42,17 +49,10 @@ class Config:
         self.config[key] = value
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f, indent=2)
+        logger.info(f"Configuração salva: {key} = {value}")
 
     def show(self) -> None:
         """Mostra todas as configurações"""
         print("📋 Configurações atuais:")
         for key, value in self.config.items():
             print(f"   {key}: {value}")
-
-def main():
-    """Função para testar a configuração"""
-    config = Config()
-    config.show()
-
-if __name__ == "__main__":
-    main()

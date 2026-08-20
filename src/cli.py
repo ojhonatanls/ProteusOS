@@ -17,15 +17,20 @@ from builder import SystemBuilder
 from pkg_manager import PackageManager
 from updater import SystemUpdater
 from config import Config
+from logger import setup_logging, get_logger
+
+# Configura logging
+setup_logging()
+logger = get_logger()
 
 # Tenta importar o módulo C (se disponível)
 try:
     import snapshot
     C_AVAILABLE = True
-    print("✅ Módulo C carregado com sucesso!")
-except ImportError as e:
+    logger.debug("Módulo C carregado com sucesso")
+except ImportError:
     C_AVAILABLE = False
-    # Não imprime nada para não poluir a saída
+    logger.debug("Módulo C não disponível, usando Python puro")
 
 class ProteusCLI:
     def __init__(self):
@@ -36,6 +41,7 @@ class ProteusCLI:
         self.updater = SystemUpdater(self.base_dir)
         self.export_dir = Path.home() / "proteus_exports"
         self.export_dir.mkdir(exist_ok=True)
+        logger.info(f"ProteusOS inicializado. Base dir: {self.base_dir}")
 
     def run(self, args=None):
         parser = argparse.ArgumentParser(
@@ -116,25 +122,28 @@ class ProteusCLI:
             elif parsed_args.comando == "cleanup":
                 self._cmd_cleanup(parsed_args)
         except Exception as e:
+            logger.error(f"Erro: {e}")
             print(f"❌ Erro: {e}")
             sys.exit(1)
 
     def _cmd_build(self, args):
         print(f"🛠️  Construindo sistema base: {args.base_image}...")
+        logger.info(f"Build iniciado: {args.base_image}")
         
-        # Usa C se disponível e solicitado
         if C_AVAILABLE and args.use_c:
             try:
                 snapshot_id = snapshot.build(args.base_image)
                 print(f"✅ Sistema construído com sucesso (C)! Snapshot: {snapshot_id}")
+                logger.info(f"Build concluído (C): {snapshot_id}")
                 return
             except Exception as e:
+                logger.error(f"Erro no módulo C: {e}")
                 print(f"⚠️  Erro no módulo C: {e}")
                 print("   Usando implementação Python...")
         
-        # Fallback para Python
         snapshot_id = self.builder.build_base(args.base_image)
         print(f"✅ Sistema construído com sucesso! Snapshot: {snapshot_id}")
+        logger.info(f"Build concluído: {snapshot_id}")
 
     def _cmd_status(self):
         status = self.builder.get_status()
@@ -148,26 +157,38 @@ class ProteusCLI:
         for snap in status:
             marker = " ▶" if snap == current else ""
             print(f"     - {snap}{marker}")
+        logger.debug(f"Status: {len(status)} snapshots, atual: {current}")
 
     def _cmd_update(self, args):
         print(f"🔄 Aplicando atualização de: {args.update_path}...")
-        result = self.updater.apply_update(args.update_path)
-        print(f"✅ Atualização aplicada: {result}")
+        logger.info(f"Update iniciado: {args.update_path}")
+        try:
+            result = self.updater.apply_update(args.update_path)
+            print(f"✅ Atualização aplicada: {result}")
+            logger.info(f"Update concluído: {result}")
+        except Exception as e:
+            logger.error(f"Erro no update: {e}")
+            raise
 
     def _cmd_rollback(self, args):
         if args.snapshot_id:
             print(f"⏪ Realizando rollback para: {args.snapshot_id}...")
+            logger.info(f"Rollback iniciado: {args.snapshot_id}")
             result = self.updater.rollback(args.snapshot_id)
         else:
             print(f"⏪ Realizando rollback para o último snapshot estável...")
+            logger.info("Rollback para último snapshot estável")
             result = self.updater.rollback()
         print(f"✅ Rollback concluído: {result}")
+        logger.info(f"Rollback concluído: {result}")
 
     def _cmd_package(self, args):
         if args.pkg_comando == "install":
             print(f"📦 Instalando pacote: {args.package_path}...")
+            logger.info(f"Instalação de pacote: {args.package_path}")
             pkg_id = self.pkg_manager.install(args.package_path)
             print(f"✅ Pacote instalado com sucesso! ID: {pkg_id}")
+            logger.info(f"Pacote instalado: {pkg_id}")
         elif args.pkg_comando == "list":
             print(f"📦 Pacotes instalados:")
             packages = self.pkg_manager.list_packages()
@@ -177,8 +198,10 @@ class ProteusCLI:
                 print(f"   - {pkg}")
         elif args.pkg_comando == "uninstall":
             print(f"🗑️  Desinstalando pacote: {args.package_id}...")
+            logger.info(f"Desinstalação de pacote: {args.package_id}")
             result = self.pkg_manager.uninstall(args.package_id)
             print(f"✅ Pacote desinstalado: {result}")
+            logger.info(f"Pacote desinstalado: {result}")
 
     def _cmd_config(self, args):
         if args.show:
@@ -193,6 +216,7 @@ class ProteusCLI:
                 value = int(value)
             self.config.set(key, value)
             print(f"✅ Configuração definida: {key} = {value}")
+            logger.info(f"Configuração definida: {key} = {value}")
         else:
             print("❌ Uso: config --show ou config --set KEY VALUE")
 
@@ -244,7 +268,9 @@ class ProteusCLI:
             print(f"   {output_path}")
             size = output_path.stat().st_size / (1024*1024)
             print(f"   Tamanho: {size:.2f} MB")
+            logger.info(f"Snapshot exportado: {snapshot_id} -> {output_path}")
         except Exception as e:
+            logger.error(f"Erro ao exportar: {e}")
             print(f"❌ Erro ao exportar snapshot: {e}")
 
     def _cmd_import(self, args):
@@ -291,7 +317,9 @@ class ProteusCLI:
                 print(f"📝 Metadados atualizados para o snapshot importado.")
             else:
                 print(f"ℹ️  Metadados já existentes para este snapshot.")
+            logger.info(f"Snapshot importado: {snapshot_id}")
         except Exception as e:
+            logger.error(f"Erro ao importar: {e}")
             print(f"❌ Erro ao importar snapshot: {e}")
 
     def _cmd_cleanup(self, args):
@@ -312,6 +340,7 @@ class ProteusCLI:
                 metadata["snapshots"] = [s for s in metadata["snapshots"] if s["id"] != args.snapshot_id]
                 self.builder._save_metadata(metadata)
                 print(f"✅ Snapshot '{args.snapshot_id}' removido com sucesso!")
+                logger.info(f"Snapshot removido: {args.snapshot_id}")
             else:
                 print("❌ Operação cancelada.")
             return
@@ -343,6 +372,7 @@ class ProteusCLI:
             if snapshot_path.exists():
                 snapshot_path.unlink()
                 print(f"   ✅ Removido: {snap_id}")
+                logger.info(f"Snapshot removido no cleanup: {snap_id}")
 
         metadata = self.builder._load_metadata()
         current_snapshot = self.builder.get_current_snapshot()

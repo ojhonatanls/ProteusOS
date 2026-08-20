@@ -48,3 +48,23 @@ htmlcov/
 # Python
 *.pyc
 __pycache__/
+# Logs
+*.log
+logs/
+
+# Backups
+*.bak
+*.backup
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Python
+*.pyc
+__pycache__/
+
+# Lock files
+*.lock
+*.lock.*
