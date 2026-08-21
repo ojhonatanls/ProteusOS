@@ -38,7 +38,7 @@ class SystemBuilder:
         """Cria os diretórios necessários."""
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
         self.diff_dir.mkdir(parents=True, exist_ok=True)
-        logger.debug(f"Diretórios criados em: {self.base_dir}")
+        logger.debug(f"Directories created in: {self.base_dir}")
 
     def _load_metadata(self) -> Dict:
         """Carrega os metadados dos snapshots com locking e recovery."""
@@ -48,13 +48,13 @@ class SystemBuilder:
                     with open(self.metadata_file, 'r') as f:
                         return json.load(f)
                 except json.JSONDecodeError as e:
-                    logger.warning(f"Arquivo de metadados corrompido: {e}")
+                    logger.warning(f"Metadata file corrupted: {e}")
                     backup_file = self.metadata_file.with_suffix('.json.bak')
                     if backup_file.exists():
-                        logger.info("Recuperando metadados do backup...")
+                        logger.info("Recovering metadata from backup...")
                         with open(backup_file, 'r') as f:
                             return json.load(f)
-                    logger.error("Não foi possível recuperar metadados. Criando novo.")
+                    logger.error("Could not recover metadata. Creating new one.")
                     return {"snapshots": [], "current": None, "diffs": []}
             return {"snapshots": [], "current": None, "diffs": []}
 
@@ -63,10 +63,10 @@ class SystemBuilder:
         with file_lock(self.lock_file):
             if self.metadata_file.exists():
                 shutil.copy2(self.metadata_file, self.metadata_file.with_suffix('.json.bak'))
-                logger.debug("Backup dos metadados criado")
+                logger.debug("Metadata backup created")
             with open(self.metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2)
-            logger.debug("Metadados salvos com sucesso")
+            logger.debug("Metadata saved successfully")
 
     def _sanitize_filename(self, name: str) -> str:
         """Sanitiza um nome para uso em nomes de arquivos."""
@@ -98,7 +98,7 @@ class SystemBuilder:
         diff_path = self.diff_dir / f"{base_id}--{new_id}.diff"
 
         if not base_path.exists() or not new_path.exists():
-            logger.error("Snapshots base ou novo não encontrados para diff.")
+            logger.error("Base or new snapshot not found for diff.")
             return False
 
         try:
@@ -121,7 +121,7 @@ class SystemBuilder:
 
             return True
         except Exception as e:
-            logger.error(f"Erro ao criar diff: {e}")
+            logger.error(f"Error creating diff: {e}")
             return False
 
     def snapshot_exists(self, snapshot_id: str) -> bool:
@@ -135,13 +135,13 @@ class SystemBuilder:
         Constrói um sistema base a partir de uma imagem.
         Se full=True, cria um snapshot completo. Caso contrário, cria um diff.
         """
-        logger.info(f"Iniciando build da imagem base: {base_image}")
+        logger.info(f"Building base image: {base_image}")
 
         safe_image = self._sanitize_filename(base_image)
         snapshot_id = self._generate_snapshot_id(safe_image)
         snapshot_path = self.snapshots_dir / f"{snapshot_id}.tar.gz"
 
-        print(f"   Construindo imagem base '{safe_image}'...")
+        print(f"   Building base image '{safe_image}'...")
 
         with tarfile.open(snapshot_path, "w:gz") as tar:
             temp_dir = self.base_dir / "temp_build"
@@ -179,7 +179,7 @@ class SystemBuilder:
         metadata["current"] = snapshot_id
         self._save_metadata(metadata)
 
-        logger.info(f"Snapshot criado: {snapshot_id}")
+        logger.info(f"Snapshot created: {snapshot_id}")
         return snapshot_id
 
     def get_status(self) -> List[str]:
@@ -192,24 +192,25 @@ class SystemBuilder:
         metadata = self._load_metadata()
         return metadata.get("current")
 
-    def rollback_to_snapshot(self, snapshot_id: str) -> bool:
+    def rollback_to_snapshot(self, snapshot_id: str) -> str:
         """
         Realiza rollback para um snapshot específico.
+        Retorna o ID do snapshot após o rollback.
         """
-        logger.info(f"Iniciando rollback para: {snapshot_id}")
+        logger.info(f"Rollback initiated to: {snapshot_id}")
 
         safe_id = self._sanitize_filename(snapshot_id)
 
         metadata = self._load_metadata()
         snapshots_ids = [s["id"] for s in metadata["snapshots"]]
         if safe_id not in snapshots_ids:
-            logger.error(f"Snapshot '{safe_id}' não encontrado nos metadados")
-            raise ValueError(f"Snapshot '{safe_id}' não encontrado")
+            logger.error(f"Snapshot '{safe_id}' not found in metadata")
+            raise ValueError(f"Snapshot '{safe_id}' not found")
 
         snapshot_path = self.snapshots_dir / f"{safe_id}.tar.gz"
         if not snapshot_path.exists():
-            logger.error(f"Arquivo do snapshot '{safe_id}' não encontrado")
-            raise FileNotFoundError(f"Arquivo do snapshot '{safe_id}' não encontrado")
+            logger.error(f"Snapshot file '{safe_id}' not found")
+            raise FileNotFoundError(f"Snapshot file '{safe_id}' not found")
 
         expected_checksum = None
         for snap in metadata["snapshots"]:
@@ -220,11 +221,32 @@ class SystemBuilder:
         if expected_checksum:
             current_checksum = self._calculate_checksum(snapshot_path)
             if current_checksum != expected_checksum:
-                logger.error(f"Checksum do snapshot '{safe_id}' não confere.")
-                raise ValueError(f"Snapshot '{safe_id}' está corrompido")
+                logger.error(f"Checksum mismatch for snapshot '{safe_id}'.")
+                raise ValueError(f"Snapshot '{safe_id}' is corrupted")
 
         metadata["current"] = safe_id
         self._save_metadata(metadata)
 
-        logger.info(f"Rollback concluído para: {safe_id}")
+        logger.info(f"Rollback completed to: {safe_id}")
+        return safe_id
+
+    def _remove_snapshot(self, snapshot_id: str) -> bool:
+        """Remove um snapshot (uso interno)."""
+        safe_id = self._sanitize_filename(snapshot_id)
+        snapshot_path = self.snapshots_dir / f"{safe_id}.tar.gz"
+        
+        if not snapshot_path.exists():
+            return False
+        
+        # Remove o arquivo
+        snapshot_path.unlink()
+        
+        # Remove dos metadados
+        metadata = self._load_metadata()
+        metadata["snapshots"] = [s for s in metadata["snapshots"] if s["id"] != safe_id]
+        if metadata.get("current") == safe_id:
+            metadata["current"] = None
+        self._save_metadata(metadata)
+        
+        logger.info(f"Snapshot removed: {safe_id}")
         return True

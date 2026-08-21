@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ProteusOS - SystemUpdater
-Gerencia atualizações atômicas e rollback.
+Manages atomic updates and rollback.
 """
 
 import os
@@ -30,11 +30,11 @@ class SystemUpdater:
         self._ensure_directories()
 
     def _ensure_directories(self):
-        """Cria os diretórios necessários."""
+        """Creates the necessary directories."""
         self.updates_dir.mkdir(parents=True, exist_ok=True)
 
     def _sanitize_filename(self, name: str) -> str:
-        """Sanitiza um nome para uso em nomes de arquivos."""
+        """Sanitizes a name for use in filenames."""
         if not name:
             return "unknown"
         sanitized = re.sub(ALLOWED_FILENAME_CHARS, '_', name)
@@ -42,35 +42,30 @@ class SystemUpdater:
 
     def apply_update(self, update_path: str) -> str:
         """
-        Aplica uma atualização de forma atômica.
-        A atualização deve ser um .tar.gz com os novos arquivos.
+        Applies an update atomically.
+        The update must be a .tar.gz with the new files.
         """
         update_path = Path(update_path)
         if not update_path.exists():
-            raise FileNotFoundError(f"Atualização não encontrada: {update_path}")
+            raise FileNotFoundError(f"Update not found: {update_path}")
 
-        logger.info(f"Aplicando atualização: {update_path}")
+        logger.info(f"Applying update: {update_path}")
 
-        # Gera um ID para a atualização
         update_id = f"{UPDATE_PREFIX}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
         update_dir = self.updates_dir / update_id
 
-        # Extrai a atualização em um diretório temporário
         temp_dir = Path(tempfile.mkdtemp(prefix="proteus_update_"))
         try:
             with tarfile.open(update_path, "r:gz") as tar:
                 tar.extractall(temp_dir)
 
             if not any(temp_dir.iterdir()):
-                raise ValueError("Atualização vazia")
+                raise ValueError("Update is empty")
 
-            # Move a atualização para o diretório de updates
             shutil.copytree(temp_dir, update_dir)
 
-            # Cria um novo snapshot
             snapshot_id = self.builder.build_base("updated")
 
-            # Adiciona metadados da atualização
             metadata = {
                 "update_id": update_id,
                 "snapshot_id": snapshot_id,
@@ -83,24 +78,23 @@ class SystemUpdater:
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-        logger.info(f"Atualização aplicada: {snapshot_id}")
+        logger.info(f"Update applied: {snapshot_id}")
         return snapshot_id
 
     def rollback(self, snapshot_id: Optional[str] = None) -> str:
         """
-        Realiza rollback para um snapshot específico ou o último estável.
+        Rolls back to a specific snapshot or the last stable one.
         """
         if snapshot_id is None:
             snapshots = self.builder.get_status()
             if len(snapshots) < 2:
-                raise ValueError("Não há snapshots suficientes para rollback")
+                raise ValueError("Not enough snapshots for rollback")
             snapshot_id = snapshots[-2]
-            logger.info(f"Rollback para o penúltimo snapshot: {snapshot_id}")
+            logger.info(f"Rollback to penultimate snapshot: {snapshot_id}")
 
-        # Verifica integridade do snapshot
         if not self.builder.snapshot_exists(snapshot_id):
-            raise FileNotFoundError(f"Snapshot '{snapshot_id}' não encontrado fisicamente")
+            raise FileNotFoundError(f"Snapshot '{snapshot_id}' not found physically")
 
         self.builder.rollback_to_snapshot(snapshot_id)
-        logger.info(f"Rollback concluído para: {snapshot_id}")
+        logger.info(f"Rollback completed to: {snapshot_id}")
         return snapshot_id

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ProteusOS - PackageManager
-Gerencia pacotes de forma transacional com suporte a dependências.
+Manages packages transactionally with dependency support.
 """
 
 import os
@@ -29,30 +29,30 @@ class PackageManager:
         self._ensure_directories()
 
     def _ensure_directories(self):
-        """Cria os diretórios necessários."""
+        """Creates the necessary directories."""
         self.packages_dir.mkdir(parents=True, exist_ok=True)
 
     def _sanitize_filename(self, name: str) -> str:
-        """Sanitiza um nome para uso em nomes de arquivos."""
+        """Sanitizes a name for use in filenames."""
         if not name:
             return "unknown"
         sanitized = re.sub(ALLOWED_FILENAME_CHARS, '_', name)
-        return sanitized[:255]  # Limita o tamanho
+        return sanitized[:255]
 
     def _load_installed(self) -> Dict:
-        """Carrega a lista de pacotes instalados com locking."""
+        """Loads the list of installed packages with locking."""
         with file_lock(self.lock_file):
             if self.installed_file.exists():
                 try:
                     with open(self.installed_file, 'r') as f:
                         return json.load(f)
                 except json.JSONDecodeError:
-                    logger.warning("Arquivo de pacotes corrompido. Criando novo.")
+                    logger.warning("Package file corrupted. Creating new one.")
                     return {"packages": []}
             return {"packages": []}
 
     def _save_installed(self, data: Dict):
-        """Salva a lista de pacotes instalados com backup e locking."""
+        """Saves the list of installed packages with backup and locking."""
         with file_lock(self.lock_file):
             if self.installed_file.exists():
                 shutil.copy2(self.installed_file, self.installed_file.with_suffix('.json.bak'))
@@ -60,12 +60,12 @@ class PackageManager:
                 json.dump(data, f, indent=2)
 
     def _get_installed_ids(self) -> Set[str]:
-        """Retorna um set com os IDs dos pacotes instalados."""
+        """Returns a set with the IDs of installed packages."""
         installed = self._load_installed()
         return {pkg["id"] for pkg in installed["packages"]}
 
     def _check_dependencies(self, dependencies: Dict) -> bool:
-        """Verifica se todas as dependências estão instaladas."""
+        """Checks if all dependencies are installed."""
         installed = self._load_installed()
         for dep_name, dep_version in dependencies.items():
             found = False
@@ -79,33 +79,29 @@ class PackageManager:
 
     def install(self, package_path: str, force: bool = False) -> str:
         """
-        Instala um pacote e suas dependências de forma atômica.
-        O pacote deve ser um arquivo .tar.gz com metadados.
+        Installs a package and its dependencies atomically.
+        The package must be a .tar.gz file with metadata.
         """
         package_path = Path(package_path)
         if not package_path.exists():
-            raise FileNotFoundError(f"Pacote não encontrado: {package_path}")
+            raise FileNotFoundError(f"Package not found: {package_path}")
 
-        logger.info(f"Instalando pacote: {package_path}")
+        logger.info(f"Installing package: {package_path}")
 
-        # Extrai o pacote em um diretório temporário
         temp_dir = Path(tempfile.mkdtemp(prefix="proteus_pkg_"))
         try:
             with tarfile.open(package_path, "r:gz") as tar:
                 tar.extractall(temp_dir)
 
-            # Verifica metadados
             metadata_file = temp_dir / "package.json"
             if not metadata_file.exists():
-                raise ValueError("Pacote inválido: package.json não encontrado")
+                raise ValueError("Invalid package: package.json not found")
 
             with open(metadata_file, 'r') as f:
                 metadata = json.load(f)
 
-            # Sanitiza nome do pacote
             pkg_name = self._sanitize_filename(metadata.get("name", "unknown"))
 
-            # Verifica dependências
             dependencies = metadata.get("dependencies", {})
             if not force and not self._check_dependencies(dependencies):
                 missing = []
@@ -119,18 +115,15 @@ class PackageManager:
                     if not found:
                         missing.append(f"{dep_name}=={dep_version}")
                 raise ValueError(
-                    f"Dependências não satisfeitas: {', '.join(missing)}. "
-                    f"Use force=True para instalar mesmo assim."
+                    f"Unsatisfied dependencies: {', '.join(missing)}. "
+                    f"Use force=True to install anyway."
                 )
 
-            # Gera um ID único para o pacote
             pkg_id = f"{PACKAGE_PREFIX}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-            # Copia o pacote para o diretório de pacotes
             pkg_dir = self.packages_dir / pkg_id
             shutil.copytree(temp_dir, pkg_dir)
 
-            # Atualiza a lista de pacotes instalados
             installed = self._load_installed()
             installed["packages"].append({
                 "id": pkg_id,
@@ -144,25 +137,25 @@ class PackageManager:
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-        logger.info(f"Pacote instalado com sucesso: {pkg_id}")
+        logger.info(f"Package installed successfully: {pkg_id}")
         return pkg_id
 
     def list_packages(self) -> List[str]:
-        """Lista os pacotes instalados com suas dependências."""
+        """Lists installed packages with their dependencies."""
         installed = self._load_installed()
         result = []
         for pkg in installed["packages"]:
             deps = pkg.get("dependencies", {})
-            deps_str = ", ".join([f"{k}=={v}" for k, v in deps.items()]) if deps else "nenhuma"
+            deps_str = ", ".join([f"{k}=={v}" for k, v in deps.items()]) if deps else "none"
             result.append(f"{pkg['name']} (v{pkg['version']}) - ID: {pkg['id']} - Deps: [{deps_str}]")
         return result
 
     def uninstall(self, package_id: str, recursive: bool = False) -> str:
         """
-        Desinstala um pacote.
-        Se recursive=True, desinstala também os pacotes que dependem dele.
+        Uninstalls a package.
+        If recursive=True, also uninstalls packages that depend on it.
         """
-        logger.info(f"Desinstalando pacote: {package_id}")
+        logger.info(f"Uninstalling package: {package_id}")
 
         installed = self._load_installed()
         
@@ -175,7 +168,7 @@ class PackageManager:
                 break
 
         if pkg_index is None:
-            raise ValueError(f"Pacote '{package_id}' não encontrado")
+            raise ValueError(f"Package '{package_id}' not found")
 
         if recursive:
             dependents = []
@@ -193,5 +186,5 @@ class PackageManager:
         removed_pkg = installed["packages"].pop(pkg_index)
         self._save_installed(installed)
 
-        logger.info(f"Pacote desinstalado: {removed_pkg['name']}")
+        logger.info(f"Package uninstalled: {removed_pkg['name']}")
         return removed_pkg["name"]
