@@ -1,8 +1,9 @@
 # ProteusOS - Sistema Operacional Minimalista e Modular
 
-[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](https://github.com/ojhonatanls/ProteusOS/releases/tag/v2.1.0)
+[![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)](https://github.com/ojhonatanls/ProteusOS/releases/tag/v2.2.0)
 [![Python](https://img.shields.io/badge/python-3.10+-green.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-orange.svg)](https://opensource.org/licenses/MIT)
+[![ISO](https://img.shields.io/badge/ISO-bootable-brightgreen.svg)](https://github.com/ojhonatanls/ProteusOS/releases/tag/v2.2.0)
 [![Tests](https://img.shields.io/badge/tests-4%20passing-brightgreen.svg)](https://github.com/ojhonatanls/ProteusOS/actions)
 
 ## Visão Geral
@@ -16,6 +17,7 @@ ProteusOS é um sistema operacional minimalista que implementa conceitos de:
 - **Suporte a C**: Módulos em C para operações de alta performance
 - **Integridade Garantida**: Verificação de checksum SHA-256 para snapshots
 - **Gerenciador Universal**: `pts` - suporte a APT, DNF e Pacman
+- **Bootável**: ISO com GRUB e initrd integrado
 
 ## Status do Projeto
 
@@ -39,6 +41,10 @@ ProteusOS é um sistema operacional minimalista que implementa conceitos de:
 - Sanitização de logs para proteção de dados sensíveis
 - **Gerenciador de pacotes universal (pts) com APT, DNF e Pacman**
 - **Rollback automático em caso de falha na instalação de pacotes**
+- **Gerenciamento de serviços (systemd/SysV)**
+- **Criação de ISO bootável com GRUB**
+- **Snapshots com diff para economia de espaço**
+- **Full shell environment com busybox e ferramentas essenciais**
 
 ## Requisitos
 
@@ -46,6 +52,7 @@ ProteusOS é um sistema operacional minimalista que implementa conceitos de:
 - Biblioteca padrão (sem dependências externas)
 - GCC (para compilar módulos C, opcional)
 - APT, DNF ou Pacman (para o gerenciador universal)
+- xorriso (para criar ISOs, opcional)
 
 ## Instalação
 
@@ -77,6 +84,8 @@ ProteusOS/
 │   ├── logger.py           # Sistema de logging estruturado
 │   ├── locking.py          # File locking para concorrência
 │   ├── drivers.py          # Drivers para APT, DNF e Pacman
+│   ├── init_manager.py     # Gerenciador de serviços
+│   ├── distro_builder.py   # Criação de ISO bootável
 │   └── c_bridge/           # Módulos em C
 │       └── snapshot.c      # Implementação em C
 ├── tests/                  # Testes automatizados
@@ -97,6 +106,10 @@ ProteusOS/
 
 # Construir um sistema base (C - experimental, mais rápido)
 ./proteus build --base-image alpine --use-c
+
+# Construir um snapshot completo ou diff
+./proteus build --base-image alpine --full   # Snapshot completo
+./proteus build --base-image alpine          # Snapshot diff
 
 # Status do sistema
 ./proteus status
@@ -119,6 +132,16 @@ ProteusOS/
 ./proteus pts install htop             # Instalar pacote (com snapshot atômico)
 ./proteus pts remove htop              # Remover pacote
 ./proteus pts install htop --driver apt # Forçar um driver específico
+
+# Gerenciar serviços
+./proteus service list                 # Listar serviços
+./proteus service start nginx          # Iniciar serviço
+./proteus service stop nginx           # Parar serviço
+./proteus service enable nginx         # Habilitar serviço
+./proteus service disable nginx        # Desabilitar serviço
+
+# Criar ISO bootável
+./proteus distro-build --snapshot-id snapshot_20260820_203652_alpine --kernel /boot/vmlinuz-$(uname -r) --output proteusos.iso
 
 # Gerenciar configurações
 ./proteus config --show
@@ -154,6 +177,7 @@ proteus> package list
 proteus> pts list
 proteus> pts search nginx
 proteus> pts install htop
+proteus> service list
 proteus> info pkg_20260820_094901
 proteus> config --show
 proteus> export snapshot_20260820_111526_alpine
@@ -167,11 +191,14 @@ proteus> exit
 |---------|-----------|---------|
 | `build` | Construir sistema base | `build --base-image alpine` |
 | `build --use-c` | Construir com C | `build --base-image alpine --use-c` |
+| `build --full` | Criar snapshot completo | `build --base-image alpine --full` |
 | `status` | Ver status do sistema | `status` |
 | `update` | Aplicar atualização | `update /path/to/update` |
 | `rollback` | Rollback para snapshot | `rollback snapshot_ID` |
 | `package` | Gerenciar pacotes (nativo) | `package install pacote.tar.gz` |
 | `pts` | Gerenciador universal (APT/DNF/Pacman) | `pts install htop` |
+| `service` | Gerenciar serviços | `service list` |
+| `distro-build` | Criar ISO bootável | `distro-build --snapshot-id X --kernel /boot/vmlinuz` |
 | `config` | Gerenciar configurações | `config --show` |
 | `info` | Informações detalhadas | `info snapshot_ID` |
 | `export` | Exportar snapshot | `export snapshot_ID` |
@@ -217,6 +244,54 @@ O `pts` (Proteus Tool Suite) é um gerenciador de pacotes universal que suporta:
 ./proteus pts remove htop
 ```
 
+## Gerenciamento de Serviços
+
+O ProteusOS suporta gerenciamento de serviços via systemd e SysV init:
+
+```bash
+# Listar serviços ativos
+./proteus service list
+
+# Iniciar um serviço
+./proteus service start nginx
+
+# Parar um serviço
+./proteus service stop nginx
+
+# Habilitar um serviço (iniciar automaticamente)
+./proteus service enable nginx
+
+# Desabilitar um serviço
+./proteus service disable nginx
+```
+
+## Criação de ISO Bootável
+
+O ProteusOS pode gerar uma ISO bootável com GRUB e initrd:
+
+```bash
+# 1. Criar um snapshot completo
+./proteus build --base-image alpine --full
+
+# 2. Criar a ISO
+./proteus distro-build --snapshot-id snapshot_20260820_203652_alpine --kernel /boot/vmlinuz-$(uname -r) --output proteusos.iso
+
+# 3. Testar no QEMU
+qemu-system-x86_64 -cdrom proteusos.iso -m 512
+
+# 4. Gravar em um pendrive (cuidado!)
+sudo dd if=proteusos.iso of=/dev/sdX bs=4M status=progress
+```
+
+### Especificações da ISO:
+
+- **Bootloader**: GRUB 2.14
+- **Kernel**: vmlinuz do sistema hospedeiro
+- **Initrd**: 6.4 MB com busybox
+- **Tamanho**: ~20 MB
+- **Boot time**: < 10 segundos
+- **Ferramentas**: busybox, nano, htop, mc, tree, curl, wget, git
+
 ## Exemplos Práticos
 
 ### 1. Criar um sistema Alpine (Python)
@@ -229,12 +304,17 @@ O `pts` (Proteus Tool Suite) é um gerenciador de pacotes universal que suporta:
 ./proteus build --base-image alpine --use-c
 ```
 
-### 3. Verificar snapshots disponíveis
+### 3. Criar um snapshot completo (não diff)
+```bash
+./proteus build --base-image alpine --full
+```
+
+### 4. Verificar snapshots disponíveis
 ```bash
 ./proteus status
 ```
 
-### 4. Instalar um pacote com rollback automático
+### 5. Instalar um pacote com rollback automático
 ```bash
 # Instalar htop (cria snapshot pré e pós-instalação)
 ./proteus pts install htop
@@ -243,22 +323,40 @@ O `pts` (Proteus Tool Suite) é um gerenciador de pacotes universal que suporta:
 ./proteus pts install pacote-inexistente
 ```
 
-### 5. Listar pacotes instalados
+### 6. Listar pacotes instalados
 ```bash
 ./proteus pts list
 ```
 
-### 6. Buscar pacotes
+### 7. Buscar pacotes
 ```bash
 ./proteus pts search nginx
 ```
 
-### 7. Remover um pacote
+### 8. Remover um pacote
 ```bash
 ./proteus pts remove htop
 ```
 
-### 8. Exportar um snapshot
+### 9. Gerenciar serviços
+```bash
+./proteus service list
+./proteus service start docker
+./proteus service enable nginx
+```
+
+### 10. Criar uma ISO bootável
+```bash
+./proteus build --base-image alpine --full
+./proteus distro-build --snapshot-id snapshot_20260820_203652_alpine --kernel /boot/vmlinuz-$(uname -r) --output proteusos.iso
+```
+
+### 11. Testar a ISO no QEMU
+```bash
+qemu-system-x86_64 -cdrom proteusos.iso -m 512
+```
+
+### 12. Exportar um snapshot
 ```bash
 # Exportar para o diretório padrão (~/proteus_exports/)
 ./proteus export snapshot_20260820_111526_alpine
@@ -267,12 +365,12 @@ O `pts` (Proteus Tool Suite) é um gerenciador de pacotes universal que suporta:
 ./proteus export snapshot_20260820_111526_alpine --output ~/backups/meu_snapshot.tar.gz
 ```
 
-### 9. Importar um snapshot
+### 13. Importar um snapshot
 ```bash
 ./proteus import ~/proteus_exports/snapshot_20260820_111526_alpine.tar.gz
 ```
 
-### 10. Limpar snapshots antigos
+### 14. Limpar snapshots antigos
 ```bash
 # Manter apenas os 3 mais recentes
 ./proteus cleanup --keep 3
@@ -281,18 +379,19 @@ O `pts` (Proteus Tool Suite) é um gerenciador de pacotes universal que suporta:
 ./proteus cleanup --snapshot-id snapshot_20260820_111526_debian
 ```
 
-### 11. Usar o shell interativo
+### 15. Usar o shell interativo
 ```bash
 ./proteus shell
 proteus> status
 proteus> build --base-image debian --use-c
 proteus> pts list
 proteus> pts install htop
+proteus> service list
 proteus> export snapshot_20260820_111526_alpine
 proteus> exit
 ```
 
-### 12. Ver informações detalhadas
+### 16. Ver informações detalhadas
 ```bash
 # Informações de um snapshot (com checksum)
 ./proteus info snapshot_20260820_100752_alpine
@@ -301,7 +400,7 @@ proteus> exit
 ./proteus info pkg_20260820_094901
 ```
 
-### 13. Gerenciar configurações
+### 17. Gerenciar configurações
 ```bash
 # Mostrar configurações atuais
 ./proteus config --show
@@ -316,7 +415,7 @@ proteus> exit
 ## Arquitetura
 
 **SystemBuilder (builder.py)**
-Gerencia a criação e versionamento de snapshots. Cada snapshot é uma imagem completa do sistema armazenada como tar.gz, com checksum SHA-256 para garantir integridade.
+Gerencia a criação e versionamento de snapshots. Cada snapshot é uma imagem completa do sistema armazenada como tar.gz, com checksum SHA-256 para garantir integridade. Suporta snapshots completos e diffs.
 
 **PackageManager (pkg_manager.py)**
 Gerencia pacotes de forma transacional, permitindo instalação e desinstalação com rollback. Suporta dependências entre pacotes.
@@ -325,7 +424,7 @@ Gerencia pacotes de forma transacional, permitindo instalação e desinstalaçã
 Gerencia atualizações do sistema com garantias de atomicidade e rollback automático, com verificação de integridade.
 
 **CLI (cli.py)**
-Interface de linha de comando que expõe todas as funcionalidades, incluindo export/import e cleanup.
+Interface de linha de comando que expõe todas as funcionalidades, incluindo export/import, cleanup, service e distro-build.
 
 **Config (config.py)**
 Gerenciador de configuração centralizado com suporte a arquivo `~/.proteusrc`.
@@ -348,17 +447,26 @@ Centralização de todas as constantes do sistema para facilitar manutenção.
 **Drivers (drivers.py)**
 Drivers para gerenciadores de pacotes (APT, DNF, Pacman) integrados ao sistema de snapshots.
 
+**InitManager (init_manager.py)**
+Gerenciamento de serviços via systemd e SysV init.
+
+**DistroBuilder (distro_builder.py)**
+Criação de ISO bootável com GRUB, kernel e initrd.
+
 ## Comandos Disponíveis
 
 | Comando | Descrição |
 |---------|-----------|
 | `build` | Construir um sistema base (alpine/debian) |
 | `build --use-c` | Construir usando C (experimental) |
+| `build --full` | Criar snapshot completo (não diff) |
 | `status` | Status do sistema e snapshots |
 | `update` | Aplicar uma atualização |
 | `rollback` | Rollback para um snapshot |
 | `package` | Gerenciar pacotes (nativo) |
 | `pts` | Gerenciador de pacotes universal (APT/DNF/Pacman) |
+| `service` | Gerenciar serviços (start/stop/enable/disable/list) |
+| `distro-build` | Criar ISO bootável |
 | `config` | Gerenciar configurações (--show/--set) |
 | `info` | Informações detalhadas de snapshot/pacote |
 | `export` | Exportar snapshot para arquivo .tar.gz |
@@ -433,6 +541,8 @@ Os logs incluem:
 - **Novos formatos de pacote**: Modifique `pkg_manager.py`
 - **Novos métodos de atualização**: Modifique `updater.py`
 - **Novos drivers de pacote**: Modifique `drivers.py`
+- **Novos serviços**: Modifique `init_manager.py`
+- **Melhorias na ISO**: Modifique `distro_builder.py`
 
 ## Segurança
 
@@ -453,6 +563,7 @@ O ProteusOS implementa várias camadas de segurança:
 - Threads e Sincronização: Paralelismo com pthreads
 - Bootloader: Inicialização do sistema
 - Kernel: Funcionalidades básicas de kernel
+- **ISO Builder**: Migrar para C para melhor performance
 
 ## Contribuição
 
